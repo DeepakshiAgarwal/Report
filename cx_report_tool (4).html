@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CX Performance Report Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,sans-serif;background:#f4f4f6;color:#1a1a1a;min-height:100vh;}
+.container{max-width:1100px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:20px;font-weight:700;margin-bottom:1.5rem;}
+.card{background:#fff;border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;border:1px solid #e5e5e5;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.upload-zone{border:2px dashed #d0d0d0;border-radius:10px;padding:3rem 1.5rem;text-align:center;cursor:pointer;transition:.2s;background:#fafafa;}
+.upload-zone:hover{border-color:#666;background:#f0f0f0;}
+.upload-zone input{display:none;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;font-size:13px;font-weight:500;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;color:#333;transition:.15s;}
+.btn:hover{background:#f5f5f5;}
+.btn-primary{background:#111;color:#fff;border-color:#111;}
+.btn-primary:hover{background:#333;}
+.sb{padding:10px 14px;border-radius:8px;font-size:13px;margin-top:.75rem;}
+.sb-info{background:#e8f4fd;color:#1a6fa8;}
+.sb-error{background:#fde8e8;color:#a81a1a;}
+.sb-success{background:#e8fde8;color:#1a7a1a;}
+.table-wrap{overflow-x:auto;margin-top:1rem;}
+table{border-collapse:collapse;font-size:12px;width:100%;min-width:700px;}
+th{background:#f0f0f0;font-weight:700;padding:9px 13px;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:11px;color:#333;}
+th.mh{text-align:left;min-width:280px;background:#e8e8e8;}
+td{padding:7px 13px;border:1px solid #e5e5e5;text-align:center;white-space:nowrap;font-size:12px;}
+td.mn{text-align:left;background:#fafafa;font-weight:500;color:#444;}
+tr:hover td{background:#f5f5ff;}
+tr:hover td.mn{background:#ededf8;}
+.sr td{background:#ececec!important;font-weight:700;font-size:10px;color:#666;letter-spacing:.07em;text-transform:uppercase;}
+.step{display:none;} .step.active{display:block;}
+.copied{font-size:12px;color:#1a8a1a;display:none;margin-bottom:8px;font-weight:500;}
+.chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-family:monospace;margin:2px 3px;border:1px solid;}
+.chip-green{background:#e8fde8;border-color:#b0ddb0;color:#1a6a1a;}
+.chip-blue{background:#e8f4fd;border-color:#b0d4f0;color:#1a5fa0;}
+.chip-yellow{background:#fff8e0;border-color:#f0d080;color:#7a5a00;}
+.meta{font-size:12px;color:#777;margin-bottom:.75rem;}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>📊 CX Performance Report Generator</h1>
+
+<!-- STEP 1: Upload -->
+<div id="s1" class="step active">
+  <div class="card">
+    <div class="upload-zone" id="dz" onclick="document.getElementById('fi').click()">
+      <div style="font-size:2.5rem;margin-bottom:.75rem;">📂</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:.4rem;">Drop your Excel or CSV file here</div>
+      <div style="font-size:13px;color:#888;">or click to browse — .xlsx, .xls, .csv supported</div>
+      <input type="file" id="fi" accept=".xlsx,.xls,.csv"/>
+    </div>
+    <div id="us"></div>
+    <div style="margin-top:1rem;padding:10px 14px;background:#f8f8f8;border-radius:8px;font-size:12px;color:#888;border:1px solid #eee;">
+      <strong style="color:#555;">Expected columns:</strong>
+      &nbsp;<span class="chip chip-blue">Ticket No</span>
+      <span class="chip chip-blue">Created Date</span>
+      <span class="chip chip-blue">Diff Time Created And Resolve</span>
+      <span class="chip chip-blue">Sub Status</span>
+      <span class="chip chip-blue">Reopen Count</span>
+    </div>
+  </div>
+</div>
+
+<!-- STEP 2: Report -->
+<div id="s2" class="step">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:16px;font-weight:700;">Daily CX Performance Report</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="copySlack()">📋 Copy for Slack</button>
+        <button class="btn" onclick="reset()">Upload New File</button>
+      </div>
+    </div>
+    <div class="copied" id="ch">✅ Copied to clipboard!</div>
+    <div id="meta" class="meta"></div>
+    <div class="table-wrap" id="rt"></div>
+  </div>
+</div>
+
+</div>
+<script>
+// ─── HARDCODED CONFIG ───────────────────────────────────────────────
+var COL_DATE      = 'Created Date';
+var COL_TICKET    = 'Ticket No';
+var COL_STATUS    = 'Sub Status';
+var COL_DIFF      = 'Diff Time Created And Resolve';
+var COL_REOPEN    = 'Reopen Count';
+
+var VAL_COMPLETED = 'Completed';
+var VAL_OCR       = 'Resolved on Call';
+var VAL_WAITING   = 'Waiting for Customer';
+// ────────────────────────────────────────────────────────────────────
+
+var repData = null;
+
+function show(id){document.querySelectorAll('.step').forEach(function(s){s.classList.remove('active');});document.getElementById(id).classList.add('active');}
+function ss(id,msg,cls){var el=document.getElementById(id);if(!msg){el.innerHTML='';return;}el.innerHTML='<div class="sb '+(cls||'sb-info')+'">'+msg+'</div>';}
+function nrm(v){return String(v==null?'':v).trim();}
+
+// Parse HH:MM:SS duration (hours can exceed 24) → total hours
+function toHours(val){
+  if(val===''||val==null) return null;
+  if(typeof val==='number'&&val<10000) return val*24;
+  var s=String(val).trim();
+  var m=s.match(/^(\d+):(\d{1,2}):(\d{1,2})$/);
+  if(m) return parseInt(m[1])+parseInt(m[2])/60+parseInt(m[3])/3600;
+  var m2=s.match(/^(\d+):(\d{1,2})$/);
+  if(m2) return parseInt(m2[1])+parseInt(m2[2])/60;
+  var n=parseFloat(s);if(!isNaN(n)) return n;
+  return null;
+}
+function toBucket(h){
+  if(h===null||h===undefined) return null;
+  if(h<4)  return 'w4';
+  if(h<12) return 'w412';
+  if(h<24) return 'w1224';
+  return 'w24p';
+}
+
+// Parse date from Excel serial or string
+function parseDate(val){
+  if(!val&&val!==0) return null;
+  if(typeof val==='number'){var d=XLSX.SSF.parse_date_code(val);if(d) return new Date(d.y,d.m-1,d.d);}
+  var s=String(val).trim();
+  // Try DD/MM/YYYY or DD-MM-YYYY
+  var m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if(m){var y=parseInt(m[3]);if(y<100) y+=2000;return new Date(y,parseInt(m[2])-1,parseInt(m[1]));}
+  var d=new Date(s);return isNaN(d)?null:d;
+}
+function fmtD(d){
+  if(!d) return 'Unknown';
+  var dd=String(d.getDate()).padStart(2,'0');
+  var mm=String(d.getMonth()+1).padStart(2,'0');
+  var yy=String(d.getFullYear()).slice(-2);
+  return dd+'/'+mm+'/'+yy;
+}
+function pct(n,den){if(!den||den===0) return '0%';return Math.round(n/den*100)+'%';}
+
+// Status checks
+function isCompleted(r){return nrm(r[COL_STATUS])===VAL_COMPLETED;}
+function isOCR(r)      {return nrm(r[COL_STATUS])===VAL_OCR;}
+function isWaiting(r)  {return nrm(r[COL_STATUS])===VAL_WAITING;}
+
+// File handling
+var dz=document.getElementById('dz');
+document.getElementById('fi').addEventListener('change',function(e){doFile(e.target.files[0]);});
+dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.borderColor='#555';});
+dz.addEventListener('dragleave',function(){dz.style.borderColor='';});
+dz.addEventListener('drop',function(e){e.preventDefault();dz.style.borderColor='';doFile(e.dataTransfer.files[0]);});
+
+function doFile(file){
+  if(!file) return;
+  var ext=file.name.split('.').pop().toLowerCase();
+  ss('us','Reading file…','sb-info');
+  var r=new FileReader();
+  r.onload=function(e){
+    try{
+      var wb=ext==='csv'?XLSX.read(e.target.result,{type:'string'}):XLSX.read(e.target.result,{type:'array'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+      if(!raw.length){ss('us','File is empty.','sb-error');return;}
+
+      // Validate required columns exist
+      var hdrs=Object.keys(raw[0]);
+      var required=[COL_DATE,COL_TICKET,COL_STATUS,COL_DIFF,COL_REOPEN];
+      var missing=required.filter(function(c){return hdrs.indexOf(c)<0;});
+      if(missing.length){
+        ss('us','Missing columns: '+missing.join(', ')+'<br><small>Found: '+hdrs.join(', ')+'</small>','sb-error');
+        return;
+      }
+
+      ss('us','','');
+      generate(raw, file.name);
+    }catch(er){ss('us','Could not parse: '+er.message,'sb-error');}
+  };
+  if(ext==='csv') r.readAsText(file); else r.readAsArrayBuffer(file);
+}
+
+function generate(raw, filename){
+  // Group by date
+  var byDate={};
+  for(var i=0;i<raw.length;i++){
+    var row=raw[i];
+    var d=parseDate(row[COL_DATE]);
+    var key=d?(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')):'unknown';
+    if(!byDate[key]) byDate[key]={d:d,rows:[]};
+    byDate[key].rows.push(row);
+  }
+
+  var keys=Object.keys(byDate).filter(function(k){return k!=='unknown';}).sort();
+  if(byDate['unknown']) keys.push('unknown');
+
+  var res=[];
+  for(var ki=0;ki<keys.length;ki++){
+    var rows=byDate[keys[ki]].rows;
+    var d=byDate[keys[ki]].d;
+    var total=rows.length;
+
+    // 1. On Call Resolved
+    var ocrC=rows.filter(isOCR).length;
+
+    // 2. Base = Total - OCR (used for resolution % and other metrics)
+    var base=total-ocrC;
+
+    // 3. Resolution buckets — Completed rows only, bucketed by diff time
+    var compR=rows.filter(isCompleted);
+    var r4    =compR.filter(function(r){return toBucket(toHours(r[COL_DIFF]))==='w4';}).length;
+    var r412  =compR.filter(function(r){return toBucket(toHours(r[COL_DIFF]))==='w412';}).length;
+    var r1224 =compR.filter(function(r){return toBucket(toHours(r[COL_DIFF]))==='w1224';}).length;
+    var r24p  =compR.filter(function(r){return toBucket(toHours(r[COL_DIFF]))==='w24p';}).length;
+
+    // 4. Pending = not Completed AND not OCR  ÷ base
+    var pendC=rows.filter(function(r){return !isCompleted(r)&&!isOCR(r);}).length;
+
+    // 5. Reopen = Reopen Count != 0 and not blank  ÷ base
+    var reopC=rows.filter(function(r){
+      var v=String(r[COL_REOPEN]==null?'':r[COL_REOPEN]).trim();
+      return v!==''&&v!=='0';
+    }).length;
+
+    // 6. Waiting for Customer  ÷ base
+    var waitC=rows.filter(isWaiting).length;
+
+    res.push({
+      label : fmtD(d),
+      total : total,
+      ocrC  : ocrC,
+      ocrPct: pct(ocrC,total),
+      base  : base,
+      r4    : r4,
+      r4p   : pct(r4,base),
+      r412p : pct(r412,base),
+      r1224p: pct(r1224,base),
+      r24pp : pct(r24p,base),
+      pendP : pct(pendC,base),
+      reopP : pct(reopC,base),
+      waitP : pct(waitC,base),
+    });
+  }
+
+  repData=res;
+  document.getElementById('meta').innerHTML=
+    '<strong>'+filename+'</strong> — '+raw.length.toLocaleString()+' rows &nbsp;|&nbsp; '
+    +keys.length+' day(s) &nbsp;|&nbsp; '
+    +'<span class="chip chip-green">Completed = "'+VAL_COMPLETED+'"</span>'
+    +'<span class="chip chip-blue">On Call = "'+VAL_OCR+'"</span>'
+    +'<span class="chip chip-yellow">Waiting = "'+VAL_WAITING+'"</span>';
+  renderT(res);
+  show('s2');
+}
+
+var MX=[
+  {k:'total', lb:'Total Tickets Received (Incl. On-Call)', sec:0},
+  {k:'ocrC',  lb:'On-Call Solved (count)',                 sec:0},
+  {k:'ocrPct',lb:'On-Call Solved %',                       sec:0},
+  {k:'base',  lb:'Tickets Received (Excl. OCR)',           sec:0},
+  {k:'_s1',   lb:'Resolution Breakdown  (÷ Excl. OCR)',    sec:1},
+  {k:'r4',    lb:'Resolved within 4 hrs (count)',          sec:0},
+  {k:'r4p',   lb:'Resolved % within 4 hrs',                sec:0},
+  {k:'r412p', lb:'Resolved % within 4–12 hrs',             sec:0},
+  {k:'r1224p',lb:'Resolved % within 12–24 hrs',            sec:0},
+  {k:'r24pp', lb:'Resolved % > 24 hrs',                    sec:0},
+  {k:'_s2',   lb:'Other Metrics  (÷ Excl. OCR)',           sec:1},
+  {k:'pendP', lb:'Pending %',                              sec:0},
+  {k:'reopP', lb:'Reopen Service Team %',                  sec:0},
+  {k:'waitP', lb:'Waiting for Customer %',                 sec:0},
+];
+
+function renderT(res){
+  var cols=res.map(function(r){return r.label;});
+  var h='<table><thead><tr><th class="mh">Metric</th>';
+  cols.forEach(function(c){h+='<th>'+c+'</th>';});
+  h+='</tr></thead><tbody>';
+  MX.forEach(function(m){
+    if(m.sec){
+      h+='<tr class="sr"><td class="mn" colspan="'+(cols.length+1)+'">'+m.lb+'</td></tr>';
+      return;
+    }
+    h+='<tr><td class="mn">'+m.lb+'</td>';
+    res.forEach(function(r){h+='<td>'+(r[m.k]!=null?r[m.k]:'—')+'</td>';});
+    h+='</tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('rt').innerHTML=h;
+}
+
+function copySlack(){
+  if(!repData) return;
+  var cols=repData.map(function(r){return r.label;});
+  var mW=44,cW=14;
+  var t='Metric'.padEnd(mW);
+  cols.forEach(function(c){t+=c.padEnd(cW);});
+  t+='\n'+'-'.repeat(mW+cW*cols.length)+'\n';
+  MX.forEach(function(m){
+    if(m.sec){t+='\n'+m.lb.toUpperCase()+'\n';return;}
+    t+=m.lb.padEnd(mW);
+    repData.forEach(function(r){t+=String(r[m.k]!=null?r[m.k]:'—').padEnd(cW);});
+    t+='\n';
+  });
+  navigator.clipboard.writeText(t).then(function(){
+    var h=document.getElementById('ch');h.style.display='block';
+    setTimeout(function(){h.style.display='none';},2500);
+  }).catch(function(){prompt('Copy this:',t);});
+}
+
+function reset(){
+  repData=null;
+  document.getElementById('fi').value='';
+  ss('us','','');
+  show('s1');
+}
+</script>
+</body>
+</html>
