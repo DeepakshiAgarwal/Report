@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CX Performance Report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,sans-serif;background:#f4f4f6;color:#1a1a1a;min-height:100vh;}
+.wrap{max-width:1200px;margin:0 auto;padding:2rem 1rem;}
+h1{font-size:20px;font-weight:700;margin-bottom:1.25rem;}
+.card{background:#fff;border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;border:1px solid #e5e5e5;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+
+/* Upload */
+.drop{border:2px dashed #ccc;border-radius:12px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:.2s;background:#fafafa;position:relative;}
+.drop:hover,.drop.over{border-color:#555;background:#f0f0f0;}
+.drop input{display:none;}
+.drop-icon{font-size:2.5rem;margin-bottom:.75rem;}
+.drop-title{font-size:15px;font-weight:600;margin-bottom:.35rem;}
+.drop-sub{font-size:13px;color:#888;}
+.how{display:flex;align-items:flex-start;gap:12px;margin-top:1.25rem;padding:12px 16px;background:#f0f7ff;border-radius:10px;border:1px solid #c8e0f8;font-size:13px;color:#1a5fa0;line-height:1.6;}
+.how b{font-weight:700;}
+
+.err{padding:10px 14px;border-radius:8px;font-size:13px;margin-top:.75rem;background:#fde8e8;color:#a81a1a;display:none;}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;font-size:13px;font-weight:500;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;color:#333;transition:.15s;}
+.btn:hover{background:#f5f5f5;}
+.btn-p{background:#111;color:#fff;border-color:#111;}
+.btn-p:hover{background:#333;}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid #e0e0e0;}
+.tab{padding:10px 22px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:#888;}
+.tab:hover{color:#333;}
+.tab.active{color:#111;border-bottom-color:#111;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* Tables */
+.tbl-wrap{overflow-x:auto;margin-top:1rem;}
+table{border-collapse:collapse;font-size:12px;width:100%;min-width:700px;}
+th{background:#f0f0f0;font-weight:700;padding:9px 13px;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:11px;color:#333;}
+th.mh{text-align:left;min-width:240px;background:#e8e8e8;}
+td{padding:7px 13px;border:1px solid #e5e5e5;text-align:center;white-space:nowrap;font-size:12px;}
+td.mn{text-align:left;background:#fafafa;font-weight:500;color:#444;}
+td.avg{background:#f0f0f0;font-weight:700;color:#333;}
+tr:hover td{background:#f5f5ff;}
+tr:hover td.mn{background:#ededf8;}
+.sec-row td{background:#ececec!important;font-weight:700;font-size:10px;color:#666;letter-spacing:.07em;text-transform:uppercase;}
+.sup{background:#fde8e8!important;color:#a81a1a;font-weight:700;}
+.sup::after{content:' ▲';font-size:10px;}
+.sdn{background:#e8fde8!important;color:#1a6a1a;font-weight:700;}
+.sdn::after{content:' ▼';font-size:10px;}
+
+/* Report header */
+.rh{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:8px;}
+.meta{font-size:12px;color:#777;margin-bottom:.75rem;}
+.chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-family:monospace;margin:2px 3px;border:1px solid;}
+.cg{background:#e8fde8;border-color:#b0ddb0;color:#1a6a1a;}
+.cb{background:#e8f4fd;border-color:#b0d4f0;color:#1a5fa0;}
+.cy{background:#fff8e0;border-color:#f0d080;color:#7a5a00;}
+.legend{display:flex;gap:14px;font-size:11px;margin-top:.6rem;flex-wrap:wrap;}
+.li{display:flex;align-items:center;gap:5px;}
+.lb{width:13px;height:13px;border-radius:3px;border:1px solid #ccc;}
+.copied{font-size:12px;color:#1a8a1a;display:none;margin-bottom:6px;font-weight:500;}
+/* Modal drill-down */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto;}
+.modal-bg.open{display:flex;}
+.modal{background:#fff;border-radius:14px;width:100%;max-width:1100px;box-shadow:0 8px 40px rgba(0,0,0,.18);overflow:hidden;}
+.modal-hd{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #e5e5e5;background:#f8f8f8;}
+.modal-hd h2{font-size:14px;font-weight:700;margin:0;}
+.modal-close{font-size:20px;cursor:pointer;color:#888;line-height:1;background:none;border:none;padding:0 4px;}
+.modal-close:hover{color:#111;}
+.modal-body{overflow-x:auto;max-height:70vh;overflow-y:auto;}
+.modal-body table{min-width:900px;font-size:11px;}
+.modal-body th{position:sticky;top:0;z-index:2;background:#f0f0f0;font-size:10px;}
+.modal-body td{white-space:normal;max-width:220px;word-break:break-word;}
+.modal-footer{padding:.75rem 1.25rem;border-top:1px solid #e5e5e5;font-size:12px;color:#888;display:flex;justify-content:space-between;align-items:center;}
+.clickable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px;}
+.clickable:hover{background:#e8eeff!important;color:#1a4fa8!important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>📊 CX Performance Report</h1>
+
+<!-- Upload card -->
+<div class="card" id="upload-card">
+  <div class="drop" id="dz" onclick="document.getElementById('fi').click()">
+    <input type="file" id="fi" accept=".xlsx,.xls,.csv"/>
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Drop the Kapture report file here</div>
+    <div class="drop-sub">.xlsx, .xls or .csv — or click to browse</div>
+  </div>
+  <div class="how">
+    <span style="font-size:1.4rem;flex-shrink:0">💡</span>
+    <div><b>How to get the file daily:</b><br>
+    Tag me in Claude chat with <b>"fetch report"</b> → I'll search your Gmail, post the download link → click it → drop file here → report appears instantly.</div>
+  </div>
+  <div class="err" id="err"></div>
+</div>
+
+<!-- Report card -->
+<div class="card" id="report-card" style="display:none;">
+  <div class="rh">
+    <span style="font-size:16px;font-weight:700;">CX Daily Reports</span>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-p" onclick="copyActive()">📋 Copy for Slack</button>
+      <button class="btn" onclick="reset()">Load New File</button>
+    </div>
+  </div>
+  <div class="copied" id="ch">✅ Copied!</div>
+  <div class="meta" id="meta"></div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('cx')">📈 CX Performance</div>
+    <div class="tab" onclick="switchTab('disp')">📂 Disposition Report</div>
+    <div class="tab" onclick="switchTab('rr')">🔄 Reopen View</div>
+    <div class="tab" onclick="switchTab('connect')">📞 Connect Rate</div>
+  </div>
+  <div id="tab-cx" class="tab-content active"><div class="tbl-wrap" id="rt-cx"></div></div>
+  <div id="tab-disp" class="tab-content">
+    <div style="margin-top:.6rem;font-size:12px;color:#666;">% of tickets per category per day (÷ Excl. OCR base).</div>
+    <div class="legend">
+      <div class="li"><div class="lb" style="background:#fde8e8;border-color:#f0a0a0;"></div><span style="color:#a81a1a;">▲ +5% or more vs previous day</span></div>
+      <div class="li"><div class="lb" style="background:#e8fde8;border-color:#b0ddb0;"></div><span style="color:#1a6a1a;">▼ −5% or more vs previous day</span></div>
+    </div>
+    <div class="tbl-wrap" id="rt-disp"></div>
+  </div>
+
+  <!-- REOPEN VIEW TAB -->
+  <div id="tab-rr" class="tab-content">
+    <div style="margin-top:1rem;">
+      <!-- Summary Cards -->
+      <div id="rr-summary-cards" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:.6rem;">
+        <div style="background:#f0f7ff;border:1px solid #c8e0f8;border-radius:10px;padding:.65rem 1.1rem;min-width:120px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Total Tickets</div>
+          <div style="font-size:20px;font-weight:700;" id="rr-ttl">—</div>
+        </div>
+        <div style="background:#fff8e0;border:1px solid #f0d080;border-radius:10px;padding:.65rem 1.1rem;min-width:120px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Reopened</div>
+          <div style="font-size:20px;font-weight:700;" id="rr-reop">—</div>
+        </div>
+        <div style="background:#fde8e8;border:1px solid #f0a0a0;border-radius:10px;padding:.65rem 1.1rem;min-width:120px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Reopen %</div>
+          <div style="font-size:20px;font-weight:700;color:#a81a1a;" id="rr-pct">—</div>
+        </div>
+        <div style="background:#fde8e8;border:1px solid #f0a0a0;border-radius:10px;padding:.65rem 1.1rem;min-width:150px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Reopened after 48 hrs</div>
+          <div style="font-size:20px;font-weight:700;color:#a81a1a;" id="rr-48c">—</div>
+        </div>
+        <div style="background:#fde8e8;border:1px solid #f0a0a0;border-radius:10px;padding:.65rem 1.1rem;min-width:150px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">48hr Reopen % (of reopened)</div>
+          <div style="font-size:20px;font-weight:700;color:#a81a1a;" id="rr-48p">—</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+        <button class="btn btn-p" onclick="copyRRDisp()">📋 Copy for Slack</button>
+      </div>
+      <div id="rr-pane-disp" class="tbl-wrap"></div>
+    </div>
+  </div>
+
+  <!-- CONNECT RATE TAB -->
+  <div id="tab-connect" class="tab-content">
+    <div style="margin-top:1rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.75rem;">
+        <span style="font-size:13px;color:#666;">Upload your call log file — needs <b>Call Time</b> (dd-mm-yyyy h:mm) &amp; <b>System Disposition</b> (CONNECTED / NO_ANSWER) columns.</span>
+        <button class="btn btn-p" onclick="copyConnect()">📋 Copy for Slack</button>
+      </div>
+      <div class="drop" id="dz-connect" style="padding:1.5rem;margin-bottom:1rem;" onclick="document.getElementById('fi-connect').click()">
+        <input type="file" id="fi-connect" accept=".xlsx,.xls,.csv"/>
+        <div class="drop-icon" style="font-size:1.8rem;">📁</div>
+        <div class="drop-title">Drop call log file here or click to browse</div>
+        <div class="drop-sub">.xlsx, .xls or .csv</div>
+      </div>
+      <div class="err" id="err-connect"></div>
+      <div id="connect-summary" style="display:none;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem;">
+          <div style="background:#f0f7ff;border:1px solid #c8e0f8;border-radius:10px;padding:.75rem 1.25rem;min-width:130px;">
+            <div style="font-size:11px;color:#888;margin-bottom:3px;">Total Calls</div>
+            <div style="font-size:22px;font-weight:700;" id="cr-total">—</div>
+          </div>
+          <div style="background:#f0fff4;border:1px solid #b0ddb0;border-radius:10px;padding:.75rem 1.25rem;min-width:130px;">
+            <div style="font-size:11px;color:#888;margin-bottom:3px;">Connected</div>
+            <div style="font-size:22px;font-weight:700;" id="cr-connected">—</div>
+          </div>
+          <div style="background:#fff8e0;border:1px solid #f0d080;border-radius:10px;padding:.75rem 1.25rem;min-width:130px;">
+            <div style="font-size:11px;color:#888;margin-bottom:3px;">Overall Connect %</div>
+            <div style="font-size:22px;font-weight:700;" id="cr-pct">—</div>
+          </div>
+          <div style="background:#fafafa;border:1px solid #e0e0e0;border-radius:10px;padding:.75rem 1.25rem;min-width:160px;">
+            <div style="font-size:11px;color:#888;margin-bottom:3px;">Date</div>
+            <div style="font-size:15px;font-weight:600;" id="cr-date">—</div>
+          </div>
+        </div>
+        <div class="tbl-wrap" id="rt-connect"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────
+var COL_DATE        = 'Created Date';
+var COL_TIME        = 'Created Time';
+var COL_TICKET      = 'Ticket No';
+var COL_STATUS      = 'Sub Status';
+var COL_DIFF        = 'Diff Time Created And Resolve';
+var COL_REOPEN      = 'Reopen Count';
+var COL_DISP3       = 'Disposition Folder Level 3';
+var COL_DISP4       = 'Disposition Folder Level 4';
+var COL_QUEUE       = 'Current Queue Name';
+var COL_REOPEN_DATE = 'Last Reopen Date';
+var COL_REOPEN_TIME = 'Last Reopen Time';
+var COL_RESOLVED_DATE = 'Resolved Date';
+var COL_RESOLVED_TIME = 'Resolved Time';
+var COL_FIRST_RESOLVED = 'First Resolved Time';  // combined datetime col
+var COL_AGENT_COL   = 'Assigned To';
+var QUEUES     = ['CX','CX-Return'];
+var V_DONE     = 'Completed';
+var V_OCR      = 'Resolved on Call';
+var V_WAIT     = 'Waiting for Customer';
+var SPIKE      = 5;
+// ─────────────────────────────────────────────
+
+var repData=null, dispData=null, activeTab='cx';
+
+// ── File drop / upload ──
+var dz=document.getElementById('dz');
+document.getElementById('fi').addEventListener('change',function(e){load(e.target.files[0]);});
+dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('over');});
+dz.addEventListener('dragleave',function(){dz.classList.remove('over');});
+dz.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('over');load(e.dataTransfer.files[0]);});
+
+function showErr(msg){var el=document.getElementById('err');el.textContent=msg;el.style.display=msg?'block':'none';}
+
+function load(file){
+  if(!file) return;
+  showErr('');
+  showLoading('Reading file… (large files may take a few seconds)');
+  var ext=file.name.split('.').pop().toLowerCase();
+  var r=new FileReader();
+  r.onload=function(e){
+    try{
+      var raw;
+      if(ext==='csv'){
+        // CSV: parse line by line to save memory
+        var text=e.target.result;
+        var lines=text.split(/\r?\n/);
+        if(lines.length<2){showErr('File is empty.');hideLoading();return;}
+        var hdrs=parseCSVLine(lines[0]);
+        raw=[];
+        for(var i=1;i<lines.length;i++){
+          if(!lines[i].trim()) continue;
+          var vals=parseCSVLine(lines[i]);
+          var row={};
+          hdrs.forEach(function(h,j){row[h]=vals[j]||'';});
+          raw.push(row);
+        }
+      } else {
+        // XLSX: use dense mode + raw:false to reduce memory
+        var wb=XLSX.read(new Uint8Array(e.target.result),{
+          type:'array', raw:true, dense:true,
+          cellDates:false, cellNF:false, cellHTML:false
+        });
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true,dense:true});
+      }
+
+      if(!raw.length){showErr('File is empty.');hideLoading();return;}
+
+      // Validate required columns
+      var hdrs=Object.keys(raw[0]);
+      var need=[COL_DATE,COL_TICKET,COL_STATUS,COL_DIFF,COL_REOPEN,COL_DISP3,COL_DISP4,COL_QUEUE];
+      var miss=need.filter(function(c){return hdrs.indexOf(c)<0;});
+      if(miss.length){showErr('Missing columns: '+miss.join(', ')+'\nFound: '+hdrs.slice(0,15).join(', '));hideLoading();return;}
+
+      showLoading('Filtering CX & CX-Return rows from '+raw.length.toLocaleString()+' rows…');
+
+      // Use setTimeout to allow UI to update before heavy filter
+      setTimeout(function(){
+        try{
+          var filtered=raw.filter(function(row){return QUEUES.indexOf(String(row[COL_QUEUE]||'').trim())>=0;});
+          if(!filtered.length){
+            var found=[...new Set(raw.map(function(r){return String(r[COL_QUEUE]||'').trim();}))].filter(Boolean).slice(0,8).join(', ');
+            showErr('No CX / CX-Return rows found. Queues in file: '+found);
+            hideLoading();return;
+          }
+          raw=null; // free memory
+          showLoading('Generating report from '+filtered.length.toLocaleString()+' rows…');
+          setTimeout(function(){
+            try{detectDateFormat(filtered);generate(filtered,file.name,filtered.length);hideLoading();}
+            catch(er){showErr('Report error: '+er.message);hideLoading();}
+          },50);
+        }catch(er){showErr('Filter error: '+er.message);hideLoading();}
+      },50);
+
+    }catch(er){
+      // If array buffer fails, try reading as binary string instead
+      if(er.message&&er.message.indexOf('allocation')>=0){
+        showErr('File too large for direct parse. Try saving as CSV from Excel first, then upload the CSV.');
+      } else {
+        showErr('Parse error: '+er.message);
+      }
+      hideLoading();
+    }
+  };
+  r.onerror=function(){showErr('Could not read file.');hideLoading();};
+  if(ext==='csv') r.readAsText(file); else r.readAsArrayBuffer(file);
+}
+
+function parseCSVLine(line){
+  var result=[],cur='',inQ=false;
+  for(var i=0;i<line.length;i++){
+    var c=line[i];
+    if(c==='"'){inQ=!inQ;}
+    else if(c===','&&!inQ){result.push(cur.trim());cur='';}
+    else{cur+=c;}
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function showLoading(msg){
+  var el=document.getElementById('loading-msg');
+  if(!el){
+    el=document.createElement('div');
+    el.id='loading-msg';
+    el.style.cssText='padding:10px 14px;border-radius:8px;font-size:13px;margin-top:.75rem;background:#e8f4fd;color:#1a6fa8;display:flex;align-items:center;gap:8px;';
+    el.innerHTML='<span style="display:inline-block;width:14px;height:14px;border:2px solid #b0d4f0;border-top-color:#1a6fa8;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;"></span><span id="loading-txt"></span>';
+    document.getElementById('dz').parentNode.appendChild(el);
+  }
+  document.getElementById('loading-txt').textContent=msg;
+  el.style.display='flex';
+}
+function hideLoading(){var el=document.getElementById('loading-msg');if(el) el.style.display='none';}
+
+// ── Helpers ──
+function nrm(v){return String(v==null?'':v).trim();}
+function toHrs(val){
+  if(val===''||val==null) return null;
+  if(typeof val==='number'&&val<10000) return val*24;
+  var s=String(val).trim();
+  var m=s.match(/^(\d+):(\d{1,2}):(\d{1,2})$/);
+  if(m) return +m[1]+ +m[2]/60+ +m[3]/3600;
+  var m2=s.match(/^(\d+):(\d{1,2})$/);
+  if(m2) return +m2[1]+ +m2[2]/60;
+  var n=parseFloat(s);return isNaN(n)?null:n;
+}
+function bucket(h){
+  if(h===null||h===undefined) return null;
+  if(h<4) return 'w4';if(h<12) return 'w412';if(h<24) return 'w1224';return 'w24p';
+}
+// Generic helper: parse any date col + any time col into a datetime
+function parseTwoCols(dateVal, timeVal){
+  if(!dateVal&&!timeVal) return null;
+  var d=null;
+  if(typeof dateVal==='number'){
+    var dc=XLSX.SSF.parse_date_code(dateVal);
+    if(dc) d=new Date(dc.y,dc.m-1,dc.d,dc.H||0,dc.M||0,dc.S||0);
+  } else {
+    var ds=String(dateVal||'').trim();
+    // Combined "D/M/YYYY HH:MM" or "D/M/YYYY HH:MM:SS"
+    var cm=ds.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if(cm){
+      var y=+cm[3];if(y<100)y+=2000;
+      d=parseDateParts(+cm[1],+cm[2],y);
+      d.setHours(+cm[4],+cm[5],cm[6]?+cm[6]:0,0);
+    } else {
+      d=parseDate(ds);
+    }
+  }
+  if(!d||isNaN(d)) return null;
+  // Apply separate time column if provided
+  if(timeVal!==null&&timeVal!==undefined&&String(timeVal).trim()){
+    if(typeof timeVal==='number'&&timeVal<1){
+      var sec=Math.round(timeVal*86400);
+      d.setHours(Math.floor(sec/3600),Math.floor((sec%3600)/60),sec%60,0);
+    } else {
+      var ts=String(timeVal).trim();
+      var tm=ts.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if(tm) d.setHours(+tm[1],+tm[2],tm[3]?+tm[3]:0,0);
+    }
+  }
+  return d;
+}
+// Scans the raw dataset once to detect whether dates are D/M/YYYY or M/D/YYYY.
+// Strategy: if ANY date has first-segment > 12, the whole file must be D/M/YYYY.
+// If ANY date has second-segment > 12, it must be M/D/YYYY.
+// Falls back to D/M/YYYY (most common in Kapture India exports) if ambiguous.
+var FILE_DATE_DMY = true; // default D/M/YYYY; updated by detectDateFormat()
+
+function detectDateFormat(raw){
+  var dmy=false, mdy=false;
+  var dateCols=[COL_DATE, COL_REOPEN_DATE, COL_RESOLVED_DATE];
+  for(var i=0;i<raw.length&&!(dmy&&mdy);i++){
+    dateCols.forEach(function(col){
+      var s=String(raw[i][col]||'').trim().split(/\s+/)[0];
+      var m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-]/);
+      if(m){
+        if(+m[1]>12) dmy=true;   // first part >12 → must be day → D/M/YYYY
+        if(+m[2]>12) mdy=true;   // second part >12 → must be day → M/D/YYYY
+      }
+    });
+  }
+  // dmy wins if detected; mdy only if explicitly found and dmy not found
+  FILE_DATE_DMY = !(mdy && !dmy);
+  console.log('[DateFormat] D/M/YYYY='+FILE_DATE_DMY+' (dmy='+dmy+' mdy='+mdy+')');
+}
+
+function parseDateParts(a, b, y){
+  // a=first segment, b=second segment, y=year (already corrected for 2-digit)
+  if(FILE_DATE_DMY) return new Date(y, b-1, a); // D/M/YYYY
+  return new Date(y, a-1, b);                    // M/D/YYYY
+}
+
+function parseDate(val){
+  if(!val&&val!==0) return null;
+  if(typeof val==='number'){var dc=XLSX.SSF.parse_date_code(val);if(dc) return new Date(dc.y,dc.m-1,dc.d);}
+  var s=String(val).trim().split(/\s+/)[0];
+  var p=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if(p){var a=+p[1],b=+p[2],y=+p[3];if(y<100)y+=2000;return parseDateParts(a,b,y);}
+  var d=new Date(s);return isNaN(d)?null:d;
+}
+
+function parseCreatedDT(row){
+  var d=parseDate(row[COL_DATE]);
+  if(!d) return null;
+  var ts=String(row[COL_TIME]||'').trim();
+  var tm=ts.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if(tm) d=new Date(d.getFullYear(),d.getMonth(),d.getDate(),+tm[1],+tm[2],tm[3]?+tm[3]:0);
+  return d;
+}
+
+function parseReopenDT(row){
+  var dateVal=row[COL_REOPEN_DATE], timeVal=row[COL_REOPEN_TIME];
+  if(!dateVal&&!timeVal) return null;
+  var d=null;
+  if(typeof dateVal==='number'){
+    var dc=XLSX.SSF.parse_date_code(dateVal);
+    if(dc) d=new Date(dc.y,dc.m-1,dc.d,dc.H||0,dc.M||0,dc.S||0);
+  } else {
+    var ds=String(dateVal||'').trim();
+    // Combined "D/M/YYYY hh:mm:ss" or "M/D/YYYY hh:mm:ss"
+    var cm=ds.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if(cm){
+      var y=+cm[3];if(y<100)y+=2000;
+      d=parseDateParts(+cm[1],+cm[2],y);
+      d.setHours(+cm[4],+cm[5],cm[6]?+cm[6]:0,0);
+    } else {
+      var dm=ds.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if(dm){var y2=+dm[3];if(y2<100)y2+=2000;d=parseDateParts(+dm[1],+dm[2],y2);}
+      else if(ds){var pd=new Date(ds);if(!isNaN(pd))d=pd;}
+    }
+  }
+  if(!d||isNaN(d)) return null;
+  // Apply separate time column
+  if(timeVal!==null&&timeVal!==undefined&&String(timeVal).trim()){
+    if(typeof timeVal==='number'&&timeVal<1){
+      var sec=Math.round(timeVal*86400);
+      d.setHours(Math.floor(sec/3600),Math.floor((sec%3600)/60),sec%60,0);
+    } else {
+      var ts2=String(timeVal).trim();
+      var tm2=ts2.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if(tm2) d.setHours(+tm2[1],+tm2[2],tm2[3]?+tm2[3]:0,0);
+    }
+  }
+  return d;
+}
+function fd(d){
+  if(!d) return '?';
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2);
+}
+function pct(n,den){return(!den||den===0)?0:Math.round(n/den*100);}
+function ps(n,den){return pct(n,den)+'%';}
+function isD(r){return nrm(r[COL_STATUS])===V_DONE;}
+function isO(r){return nrm(r[COL_STATUS])===V_OCR;}
+function isW(r){return nrm(r[COL_STATUS])===V_WAIT;}
+var TAB_ORDER=['cx','disp','rr','connect'];
+function switchTab(t){
+  activeTab=t;
+  document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
+  document.querySelectorAll('.tab-content').forEach(function(x){x.classList.remove('active');});
+  var idx=TAB_ORDER.indexOf(t);
+  var tabs=document.querySelectorAll('.tab');
+  if(tabs[idx]) tabs[idx].classList.add('active');
+  document.getElementById('tab-'+t).classList.add('active');
+}
+
+// ── Generate ──
+function generate(raw, fname, cnt){
+  var byDate={};
+  raw.forEach(function(row){
+    var d=parseDate(row[COL_DATE]);
+    var k=d?(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')):'unknown';
+    if(!byDate[k]) byDate[k]={d:d,rows:[]};
+    byDate[k].rows.push(row);
+  });
+  var keys=Object.keys(byDate).filter(function(k){return k!=='unknown';}).sort();
+  if(byDate['unknown']) keys.push('unknown');
+
+  // CX Performance
+  var res=[];
+  keys.forEach(function(k){
+    var rows=byDate[k].rows, d=byDate[k].d;
+    var tot=rows.length, ocrC=rows.filter(isO).length, base=tot-ocrC;
+    var comp=rows.filter(isD);
+    var r4=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w4';}).length;
+    var r412=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w412';}).length;
+    var r1224=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w1224';}).length;
+    var r24p=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w24p';}).length;
+    var pend=rows.filter(function(r){return !isD(r)&&!isO(r);}).length;
+    var reop=rows.filter(function(r){var v=String(r[COL_REOPEN]==null?'':r[COL_REOPEN]).trim();return v!==''&&v!=='0';}).length;
+    var wait=rows.filter(isW).length;
+    var reopRows=rows.filter(function(r){var v=String(r[COL_REOPEN]==null?'':r[COL_REOPEN]).trim();return v!==''&&v!=='0';});
+    var pendRows=rows.filter(function(r){return !isD(r)&&!isO(r);});
+    var waitRows=rows.filter(isW);
+    var r4Rows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w4';});
+    var r412Rows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w412';});
+    var r1224Rows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w1224';});
+    var r24pRows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w24p';});
+    var baseRows=rows.filter(function(r){return !isO(r);});
+    res.push({lb:fd(d),tot:tot,ocrC:ocrC,ocrP:ps(ocrC,tot),base:base,
+      r4:r4Rows.length,r4p:ps(r4Rows.length,base),r412p:ps(r412Rows.length,base),
+      r1224p:ps(r1224Rows.length,base),r24pp:ps(r24pRows.length,base),
+      pend:ps(pendRows.length,base),reop:ps(reopRows.length,base),wait:ps(waitRows.length,base),
+      _rows:rows,_dk:fd(d),
+      _byFilter:{
+        tot:rows, ocrC:rows.filter(isO), ocrP:rows.filter(isO),
+        base:baseRows,
+        r4:r4Rows, r4p:r4Rows,
+        r412p:r412Rows, r1224p:r412Rows,
+        r1224p:r1224Rows,
+        r24pp:r24pRows,
+        pend:pendRows, reop:reopRows, wait:waitRows
+      }
+    });
+  });
+  repData=res;
+
+  // Disposition
+  var pairOrd=[],pSeen={},l3Ord=[],l3G={};
+  raw.forEach(function(row){
+    var l3=nrm(row[COL_DISP3])||'(blank)',l4=nrm(row[COL_DISP4])||'(blank)',pk=l3+'|||'+l4;
+    if(!pSeen[pk]){pSeen[pk]=1;pairOrd.push({l3:l3,l4:l4});}
+    if(!l3G[l3]){l3G[l3]=[];l3Ord.push(l3);}
+  });
+  pairOrd.sort(function(a,b){return a.l3<b.l3?-1:a.l3>b.l3?1:a.l4<b.l4?-1:a.l4>b.l4?1:0;});
+  l3Ord=[];l3G={};
+  pairOrd.forEach(function(p){if(!l3G[p.l3]){l3G[p.l3]=[];l3Ord.push(p.l3);}l3G[p.l3].push(p);});
+
+  var dRows=[];
+  keys.forEach(function(k){
+    var rows=byDate[k].rows, d=byDate[k].d;
+    var ocrC=rows.filter(isO).length, base=rows.length-ocrC;
+    var nonO=rows.filter(function(r){return !isO(r);});
+    var day={lb:fd(d),base:base,v:{},rawV:{}};
+    pairOrd.forEach(function(p){
+      var pk=p.l3+'|||'+p.l4;
+      var matched=nonO.filter(function(r){return (nrm(r[COL_DISP3])||'(blank)')===p.l3&&(nrm(r[COL_DISP4])||'(blank)')===p.l4;});
+      day.v[pk]=pct(matched.length,base);
+      day.rawV[pk]=matched;
+    });
+    dRows.push(day);
+  });
+
+  var pAvg={};
+  pairOrd.forEach(function(p){
+    var pk=p.l3+'|||'+p.l4,s=0;
+    dRows.forEach(function(d){s+=(d.v[pk]||0);});
+    pAvg[pk]=dRows.length?Math.round(s/dRows.length):0;
+  });
+  var l3Day={},l3Avg={};
+  l3Ord.forEach(function(l3){
+    l3Day[l3]={};
+    dRows.forEach(function(d){
+      var s=0;l3G[l3].forEach(function(p){s+=(d.v[p.l3+'|||'+p.l4]||0);});
+      l3Day[l3][d.lb]=s;
+    });
+    var s=0;dRows.forEach(function(d){s+=l3Day[l3][d.lb];});
+    l3Avg[l3]=dRows.length?Math.round(s/dRows.length):0;
+  });
+  // Build lookup tables for drill-down on Avg col and L3 totals
+  var _allPairRows={}, _l3DayRows={}, _l3AllRows={};
+  pairOrd.forEach(function(p){
+    var pk=p.l3+'|||'+p.l4;
+    _allPairRows[pk]=[];
+    dRows.forEach(function(d){if(d.rawV&&d.rawV[pk])_allPairRows[pk]=_allPairRows[pk].concat(d.rawV[pk]);});
+  });
+  l3Ord.forEach(function(l3){
+    _l3AllRows[l3]=[];
+    dRows.forEach(function(d){
+      var key=l3+'||'+d.lb;
+      _l3DayRows[key]=[];
+      l3G[l3].forEach(function(p){
+        var pk=p.l3+'|||'+p.l4;
+        if(d.rawV&&d.rawV[pk]){
+          _l3DayRows[key]=_l3DayRows[key].concat(d.rawV[pk]);
+          _l3AllRows[l3]=_l3AllRows[l3].concat(d.rawV[pk]);
+        }
+      });
+    });
+  });
+  dispData={dRows:dRows,pairOrd:pairOrd,pAvg:pAvg,l3Ord:l3Ord,l3G:l3G,l3Day:l3Day,l3Avg:l3Avg,
+            _allPairRows:_allPairRows,_l3DayRows:_l3DayRows,_l3AllRows:_l3AllRows};
+
+  document.getElementById('meta').innerHTML=
+    '<strong>'+fname+'</strong> &nbsp;·&nbsp; '+cnt.toLocaleString()+' rows (CX &amp; CX-Return) &nbsp;·&nbsp; '+keys.length+' day(s) &nbsp;|&nbsp;'
+    +'<span class="chip cg">'+V_DONE+'</span><span class="chip cb">'+V_OCR+'</span><span class="chip cy">'+V_WAIT+'</span>';
+  renderCX(res);
+  renderDisp(dispData);
+  renderRR(raw);
+  document.getElementById('upload-card').style.display='none';
+  document.getElementById('report-card').style.display='block';
+}
+
+// ── CX Table ──
+var MX=[
+  {k:'tot',   lb:'Total Tickets Received (Incl. On-Call)', s:0},
+  {k:'ocrC',  lb:'On-Call Solved (count)',                 s:0},
+  {k:'ocrP',  lb:'On-Call Solved %',                       s:0},
+  {k:'base',  lb:'Tickets Received (Excl. OCR)',           s:0},
+  {k:'_s1',   lb:'Resolution Breakdown  (÷ Excl. OCR)',    s:1},
+  {k:'r4',    lb:'Resolved within 4 hrs (count)',          s:0},
+  {k:'r4p',   lb:'Resolved % within 4 hrs',                s:0},
+  {k:'r412p', lb:'Resolved % within 4–12 hrs',             s:0},
+  {k:'r1224p',lb:'Resolved % within 12–24 hrs',            s:0},
+  {k:'r24pp', lb:'Resolved % > 24 hrs',                    s:0},
+  {k:'_s2',   lb:'Other Metrics  (÷ Excl. OCR)',           s:1},
+  {k:'pend',  lb:'Pending %',                              s:0},
+  {k:'reop',  lb:'Reopen Service Team %',                  s:0},
+  {k:'wait',  lb:'Waiting for Customer %',                 s:0},
+];
+function renderCX(res){
+  // Reset registry each render
+  _DR=[];
+  var cols=res.map(function(r){return r.lb;});
+  var h='<table><thead><tr><th class="mh">Metric</th>';
+  cols.forEach(function(c){h+='<th>'+c+'</th>';});
+  h+='</tr></thead><tbody>';
+  MX.forEach(function(m){
+    if(m.s){h+='<tr class="sec-row"><td class="mn" colspan="'+(cols.length+1)+'">'+m.lb+'</td></tr>';return;}
+    h+='<tr><td class="mn">'+m.lb+'</td>';
+    res.forEach(function(ri){
+      var val=ri[m.k]!=null?ri[m.k]:'—';
+      var rows=ri._byFilter&&ri._byFilter[m.k]!==undefined?ri._byFilter[m.k]:ri._rows;
+      var id=rd(m.lb+' · '+ri.lb, rows);
+      h+='<td class="clickable" onclick="drill('+id+')">'+val+'</td>';
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('rt-cx').innerHTML=h;
+}
+
+// ── Disposition Table ──
+function renderDisp(data){
+  var dRows=data.dRows,pairOrd=data.pairOrd,pAvg=data.pAvg;
+  var l3Ord=data.l3Ord,l3G=data.l3G,l3Day=data.l3Day,l3Avg=data.l3Avg;
+  var cols=dRows.map(function(d){return d.lb;});
+  var h='<table><thead><tr>'
+    +'<th class="mh" style="min-width:160px;">Disposition (Level 3)</th>'
+    +'<th class="mh" style="min-width:195px;">Sub Disposition (Level 4)</th>';
+  cols.forEach(function(c){h+='<th>'+c+'</th>';});
+  h+='<th style="background:#e8e8e8;min-width:52px;">Avg</th></tr></thead><tbody>';
+  l3Ord.forEach(function(l3){
+    var grp=l3G[l3], span=grp.length+1;
+    grp.forEach(function(p,pi){
+      var pk=p.l3+'|||'+p.l4, avg=pAvg[pk];
+      h+='<tr>';
+      if(pi===0) h+='<td class="mn" rowspan="'+span+'" style="vertical-align:middle;border-right:2px solid #bbb;background:#f0f0f0;font-weight:700;">'+(l3.length>28?l3.slice(0,26)+'…':l3)+'</td>';
+      h+='<td class="mn" style="padding-left:14px;color:#555;">'+(p.l4.length>33?p.l4.slice(0,31)+'…':p.l4)+'</td>';
+      dRows.forEach(function(d,di){
+        var val=d.v[pk]||0, extraCls='';
+        if(di>0){var prev=dRows[di-1].v[pk]||0,diff=val-prev;if(Math.abs(diff)>=SPIKE) extraCls=diff>0?' sup':' sdn';}
+        var rows=d.rawV&&d.rawV[pk]?d.rawV[pk]:[];
+        var id=rd(p.l4+' · '+d.lb, rows);
+        h+='<td class="clickable'+extraCls+'" onclick="drill('+id+')">'+val+'%</td>';
+      });
+      var allRows=[];dRows.forEach(function(d){if(d.rawV&&d.rawV[pk])allRows=allRows.concat(d.rawV[pk]);});
+      var avgId=rd(p.l4+' · All days', allRows);
+      h+='<td class="avg clickable" onclick="drill('+avgId+')">'+avg+'%</td></tr>';
+    });
+    // L3 total row
+    h+='<tr style="border-top:2px solid #bbb;border-bottom:2px solid #bbb;">'
+      +'<td style="background:#dde;font-weight:700;font-size:11px;padding-left:14px;letter-spacing:.02em;">TOTAL</td>';
+    dRows.forEach(function(d,di){
+      var lkey=l3+'||'+d.lb;
+      var id=rd(l3+' · '+d.lb, data._l3DayRows[lkey]||[]);
+      h+='<td style="background:#dde;font-weight:700;" class="clickable" onclick="drill('+id+')">'+l3Day[l3][d.lb]+'%</td>';
+    });
+    var allId=rd(l3+' · All days', data._l3AllRows[l3]||[]);
+    h+='<td style="background:#ccd;font-weight:700;" class="clickable" onclick="drill('+allId+')">'+l3Avg[l3]+'%</td></tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('rt-disp').innerHTML=h;
+}
+
+// ── Copy ──
+function copyActive(){activeTab==='cx'?copyCX():copyDisp();}
+function copyCX(){
+  if(!repData) return;
+  var cols=repData.map(function(r){return r.lb;}),mW=44,cW=14,t='Metric'.padEnd(mW);
+  cols.forEach(function(c){t+=c.padEnd(cW);});
+  t+='\n'+'-'.repeat(mW+cW*cols.length)+'\n';
+  MX.forEach(function(m){
+    if(m.s){t+='\n'+m.lb.toUpperCase()+'\n';return;}
+    t+=m.lb.padEnd(mW);
+    repData.forEach(function(r){t+=String(r[m.k]!=null?r[m.k]:'—').padEnd(cW);});
+    t+='\n';
+  });
+  clip(t);
+}
+function copyDisp(){
+  if(!dispData) return;
+  var dRows=dispData.dRows,l3Ord=dispData.l3Ord,l3G=dispData.l3G;
+  var pAvg=dispData.pAvg,l3Day=dispData.l3Day,l3Avg=dispData.l3Avg;
+  var cols=dRows.map(function(d){return d.lb;}),l3W=28,l4W=34,cW=10;
+  var t='Level 3'.padEnd(l3W)+'Level 4'.padEnd(l4W);
+  cols.forEach(function(c){t+=c.padEnd(cW);});
+  t+='Avg\n'+'-'.repeat(l3W+l4W+cW*cols.length+6)+'\n';
+  l3Ord.forEach(function(l3){
+    l3G[l3].forEach(function(p){
+      var pk=p.l3+'|||'+p.l4;
+      t+=l3.slice(0,l3W-1).padEnd(l3W)+p.l4.slice(0,l4W-1).padEnd(l4W);
+      dRows.forEach(function(d){t+=String((d.v[pk]||0)+'%').padEnd(cW);});
+      t+=pAvg[pk]+'%\n';
+    });
+    t+='TOTAL'.padEnd(l3W+l4W);
+    dRows.forEach(function(d){t+=String(l3Day[l3][d.lb]+'%').padEnd(cW);});
+    t+=l3Avg[l3]+'%\n\n';
+  });
+  clip(t);
+}
+function clip(t){
+  navigator.clipboard.writeText(t).then(function(){
+    var h=document.getElementById('ch');h.style.display='block';
+    setTimeout(function(){h.style.display='none';},2500);
+  }).catch(function(){prompt('Copy:',t);});
+}
+
+// ─── REOPEN VIEW ─────────────────────────────
+var rrData=null;
+
+function renderRR(raw){
+  // ── Build enriched rows ──
+  var enriched=[];
+  raw.forEach(function(row){
+    var createdDt=parseCreatedDT(row);
+    var dk=createdDt?fd(createdDt):'Unknown';
+    var reopVal=String(row[COL_REOPEN]==null?'':row[COL_REOPEN]).trim();
+    var isReopen=(reopVal!==''&&reopVal!=='0');
+    var isAfter48=false;
+    if(isReopen){
+      var reopDt=parseReopenDT(row);
+      // Baseline = First Resolved Time (when ticket was first closed, combined datetime col)
+      var resolvedDt=parseTwoCols(row[COL_FIRST_RESOLVED],null);
+      if(reopDt&&resolvedDt){
+        if((reopDt-resolvedDt)/3600000>=48) isAfter48=true;
+      }
+    }
+    enriched.push({dk:dk,isReopen:isReopen,isAfter48:isAfter48,disp3:nrm(row[COL_DISP3])||'(blank)',_raw:row});
+  });
+
+  // ── Summary cards ──
+  var totalT=enriched.length;
+  var totalR=enriched.filter(function(r){return r.isReopen;}).length;
+  var total48=enriched.filter(function(r){return r.isAfter48;}).length;
+  var cAll=re('All tickets',null,null,null);
+  var cReop=re('All reopened',null,null,'reopen');
+  var c48=re('Reopened >48hrs',null,null,'after48');
+  function setCard(elId,val,rid){
+    var el=document.getElementById(elId);
+    el.textContent=val;el.className='clickable';
+    el.onclick=function(){drill(rid);};
+  }
+  setCard('rr-ttl',totalT.toLocaleString(),cAll);
+  setCard('rr-reop',totalR.toLocaleString(),cReop);
+  setCard('rr-48c',total48.toLocaleString(),c48);
+  var pctEl=document.getElementById('rr-pct');
+  pctEl.textContent=totalT?Math.round(totalR/totalT*100)+'%':'—';
+  pctEl.className='clickable';pctEl.onclick=function(){drill(cReop);};
+  var p48El=document.getElementById('rr-48p');
+  p48El.textContent=totalR?Math.round(total48/totalR*100)+'%':'—';
+  p48El.className='clickable';p48El.onclick=function(){drill(c48);};
+
+  rrData={enriched:enriched};
+
+  // ── Disposition matrix ──
+  var dispSet={},dateSet={};
+  enriched.forEach(function(r){if(r.isReopen)dispSet[r.disp3]=1; dateSet[r.dk]=1;});
+  var disps=Object.keys(dispSet).sort();
+  var dates=Object.keys(dateSet).sort();
+  var matrix={},dateTotals={};
+  dates.forEach(function(dk){matrix[dk]={};dateTotals[dk]={total:0,reopen:0,after48:0};});
+  enriched.forEach(function(r){
+    if(!matrix[r.dk]) return;
+    if(!matrix[r.dk][r.disp3]) matrix[r.dk][r.disp3]={reopen:0,after48:0,total:0};
+    dateTotals[r.dk].total++;
+    matrix[r.dk][r.disp3].total++;
+    if(r.isReopen){
+      dateTotals[r.dk].reopen++;
+      matrix[r.dk][r.disp3].reopen++;
+      if(r.isAfter48){dateTotals[r.dk].after48++;matrix[r.dk][r.disp3].after48++;}
+    }
+  });
+
+  var h='<div style="font-size:11px;color:#888;margin-bottom:.5rem;">Reopen % per Disposition per day &nbsp;|&nbsp; 🔴 = reopened after 48 hrs</div>';
+  h+='<table><thead><tr><th class="mh" style="min-width:100px;">Created Date</th><th>Total</th><th>Reopened</th><th>Reopen %</th><th style="background:#fde8e8;">48hr Reop</th>';
+  disps.forEach(function(d){h+='<th title="'+d+'">'+(d.length>18?d.slice(0,16)+'…':d)+'</th>';});
+  h+='</tr></thead><tbody>';
+  dates.forEach(function(dk){
+    var dt=dateTotals[dk];
+    var rPct=dt.total?Math.round(dt.reopen/dt.total*100):0;
+    h+='<tr><td class="mn">'+dk+'</td>';
+    h+='<td class="clickable" onclick="drill('+re('All · '+dk,['dk'],[dk],null)+')">'+dt.total+'</td>';
+    var ridR=re('Reopened · '+dk,['dk'],[dk],'reopen');
+    h+='<td class="clickable" onclick="drill('+ridR+')">'+dt.reopen+'</td>';
+    h+='<td class="clickable" style="font-weight:700;'+(rPct>=20?'color:#a81a1a;background:#fde8e8;':'color:#1a6a1a;')+'" onclick="drill('+ridR+')">'+rPct+'%</td>';
+    h+='<td class="clickable" style="background:#fde8e8;font-weight:700;color:#a81a1a;" onclick="drill('+re('>48hrs · '+dk,['dk'],[dk],'after48')+')">'+dt.after48+(dt.reopen?' ('+Math.round(dt.after48/dt.reopen*100)+'%)':'')+'</td>';
+    disps.forEach(function(d){
+      var cell=matrix[dk][d]||{reopen:0,after48:0,total:0};
+      var p=cell.total?Math.round(cell.reopen/cell.total*100):0;
+      var cls=p>=20?'background:#fde8e8;color:#a81a1a;font-weight:700;':p===0&&cell.total?'background:#e8fde8;color:#1a6a1a;':'';
+      var label=cell.reopen+'/'+cell.total+(cell.total?' ('+p+'%)':'')+(cell.after48?' 🔴'+cell.after48:'');
+      h+='<td class="clickable" style="'+cls+'" onclick="drill('+re(d+' · '+dk,['disp','dk'],[d,dk],'reopen')+')">'+label+'</td>';
+    });
+    h+='</tr>';
+  });
+  // Grand total
+  h+='<tr class="sec-row"><td class="mn">TOTAL</td>';
+  h+='<td class="clickable" onclick="drill('+cAll+')">'+totalT+'</td>';
+  h+='<td class="clickable" onclick="drill('+cReop+')">'+totalR+'</td>';
+  h+='<td class="clickable" style="font-weight:700;" onclick="drill('+cReop+')">'+(totalT?Math.round(totalR/totalT*100):0)+'%</td>';
+  h+='<td class="clickable" style="background:#fde8e8;font-weight:700;color:#a81a1a;" onclick="drill('+c48+')">'+total48+(totalR?' ('+Math.round(total48/totalR*100)+'%)':'')+'</td>';
+  disps.forEach(function(d){
+    var r=0,t=0,a=0;
+    dates.forEach(function(dk){var c=matrix[dk][d]||{reopen:0,after48:0,total:0};r+=c.reopen;t+=c.total;a+=c.after48;});
+    var p=t?Math.round(r/t*100):0;
+    h+='<td class="clickable" style="font-weight:700;" onclick="drill('+re(d+' · All',['disp'],[d],'reopen')+')">'+r+'/'+t+(t?' ('+p+'%)':'')+(a?' 🔴'+a:'')+'</td>';
+  });
+  h+='</tr></tbody></table>';
+  document.getElementById('rr-pane-disp').innerHTML=h;
+}
+
+
+function copyRRDisp(){
+  if(!rrData) return;
+  var enriched=rrData.enriched;
+  var t='RR Report — By Disposition\n'+'='.repeat(50)+'\n';
+  t+='Date        Total  Reopen  Reopen%  48hr\n'+'-'.repeat(44)+'\n';
+  var dateSet={};
+  enriched.forEach(function(r){dateSet[r.dk]=1;});
+  var dates=Object.keys(dateSet).sort();
+  dates.forEach(function(dk){
+    var rows=enriched.filter(function(r){return r.dk===dk;});
+    var tot=rows.length,rep=rows.filter(function(r){return r.isReopen;}).length;
+    var a48=rows.filter(function(r){return r.isAfter48;}).length;
+    t+=dk.padEnd(12)+String(tot).padEnd(7)+String(rep).padEnd(8)+(tot?Math.round(rep/tot*100):0)+'%'.padEnd(10)+a48+'\n';
+  });
+  clip(t);
+}
+
+// ─── CONNECT RATE REPORT ─────────────────────
+var connectData=null;
+var HOURS_CR=[10,11,12,13,14,15,16,17,18,19,20];
+function slotLbl(h){var s=h%12||12,e=(h+1)%12||12;return s+'-'+e;}
+
+var dzC=document.getElementById('dz-connect');
+document.getElementById('fi-connect').addEventListener('change',function(e){if(e.target.files[0])loadConnect(e.target.files[0]);});
+dzC.addEventListener('dragover',function(e){e.preventDefault();dzC.classList.add('over');});
+dzC.addEventListener('dragleave',function(){dzC.classList.remove('over');});
+dzC.addEventListener('drop',function(e){e.preventDefault();dzC.classList.remove('over');if(e.dataTransfer.files[0])loadConnect(e.dataTransfer.files[0]);});
+
+function showErrConnect(msg){var el=document.getElementById('err-connect');el.textContent=msg;el.style.display=msg?'block':'none';}
+
+function loadConnect(file){
+  showErrConnect('');
+  var ext=file.name.split('.').pop().toLowerCase();
+  var r=new FileReader();
+  r.onload=function(e){
+    try{
+      var rows;
+      if(ext==='csv'){
+        var lines=e.target.result.split(/\r?\n/);
+        if(lines.length<2){showErrConnect('File is empty.');return;}
+        var hdrs=parseCSVLine(lines[0]);
+        rows=[];
+        for(var i=1;i<lines.length;i++){
+          if(!lines[i].trim()) continue;
+          var vals=parseCSVLine(lines[i]);
+          var row={};hdrs.forEach(function(h,j){row[h]=vals[j]||'';});rows.push(row);
+        }
+      } else {
+        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',raw:true,dense:true,cellDates:false});
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+      }
+      if(!rows.length){showErrConnect('No data found.');return;}
+      var hdrs2=Object.keys(rows[0]);
+      var ctIdx=hdrs2.find(function(h){return h.toLowerCase().includes('call time');});
+      var dpIdx=hdrs2.find(function(h){return h.toLowerCase().includes('disposition');});
+      if(!ctIdx){showErrConnect('Cannot find "Call Time" column. Found: '+hdrs2.slice(0,8).join(', '));return;}
+      if(!dpIdx){showErrConnect('Cannot find "System Disposition" column.');return;}
+
+      var data=[];
+      rows.forEach(function(row){
+        var rawT=row[ctIdx],disp=String(row[dpIdx]||'').trim().toUpperCase();
+        var dt;
+        if(typeof rawT==='number'){
+          var dc=XLSX.SSF.parse_date_code(rawT);
+          if(dc) dt=new Date(dc.y,dc.m-1,dc.d,dc.H||0,dc.M||0);
+        } else {
+          var s=String(rawT).trim();
+          var pts=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})/);
+          if(pts) dt=new Date(+pts[3],+pts[2]-1,+pts[1],+pts[4],+pts[5]);
+          else dt=new Date(s);
+        }
+        if(!dt||isNaN(dt)) return;
+        data.push({hour:dt.getHours(),connected:disp==='CONNECTED',date:dt});
+      });
+      if(!data.length){showErrConnect('No valid rows parsed. Check date format (dd-mm-yyyy h:mm).');return;}
+
+      var total=data.length,connected=data.filter(function(d){return d.connected;}).length;
+      var dates=[...new Set(data.map(function(d){return d.date.toLocaleDateString('en-GB');}))] ;
+      document.getElementById('cr-total').textContent=total.toLocaleString();
+      document.getElementById('cr-connected').textContent=connected.toLocaleString();
+      document.getElementById('cr-pct').textContent=Math.round(connected/total*100)+'%';
+      document.getElementById('cr-date').textContent=dates.length===1?dates[0]:dates[0]+' – '+dates[dates.length-1];
+
+      var slots={};
+      HOURS_CR.forEach(function(h){slots[h]={total:0,connected:0};});
+      data.forEach(function(d){if(slots[d.hour]!==undefined){slots[d.hour].total++;if(d.connected)slots[d.hour].connected++;}});
+
+      connectData={slots:slots,total:total,connected:connected,date:document.getElementById('cr-date').textContent};
+
+      var h='<table style="min-width:400px;"><thead><tr>'
+        +'<th style="text-align:left;min-width:80px;">Time Slot</th>'
+        +'<th>Total Calls</th><th>Connected</th><th>Connect %</th></tr></thead><tbody>';
+      HOURS_CR.forEach(function(hr){
+        var s=slots[hr],p=s.total?Math.round(s.connected/s.total*100):null;
+        var bar=p!==null?'<div style="display:inline-block;width:'+Math.max(p,2)+'px;height:8px;background:#1a8a5a;border-radius:4px;vertical-align:middle;margin-left:6px;"></div>':'';
+        h+='<tr><td class="mn">'+slotLbl(hr)+'</td><td>'+s.total+'</td><td>'+s.connected+'</td>'
+          +'<td>'+(p!==null?p+'%'+bar:'—')+'</td></tr>';
+      });
+      h+='</tbody></table>';
+      document.getElementById('rt-connect').innerHTML=h;
+      document.getElementById('connect-summary').style.display='block';
+      document.getElementById('dz-connect').style.display='none';
+    }catch(er){showErrConnect('Error: '+er.message);}
+  };
+  r.onerror=function(){showErrConnect('Could not read file.');};
+  if(ext==='csv') r.readAsText(file); else r.readAsArrayBuffer(file);
+}
+
+function copyConnect(){
+  if(!connectData) return;
+  var s=connectData.slots,header='Connect Rate Report — '+connectData.date+'\n\n';
+  var t=header+'Time Slot    Total    Connected    Connect%\n'+'-'.repeat(44)+'\n';
+  HOURS_CR.forEach(function(hr){
+    var sl=s[hr],p=sl.total?Math.round(sl.connected/sl.total*100):0;
+    t+=slotLbl(hr).padEnd(13)+String(sl.total).padEnd(9)+String(sl.connected).padEnd(13)+(sl.total?p+'%':'—')+'\n';
+  });
+  t+='\nOverall: '+connectData.connected+'/'+connectData.total+' ('+Math.round(connectData.connected/connectData.total*100)+'%)';
+  clip(t);
+}
+
+function reset(){
+  repData=null;dispData=null;rrData=null;connectData=null;_DR=[];
+  document.getElementById('fi').value='';
+  document.getElementById('fi-connect').value='';
+  showErr('');showErrConnect('');
+  document.getElementById('connect-summary').style.display='none';
+  document.getElementById('dz-connect').style.display='block';
+  document.getElementById('upload-card').style.display='block';
+  document.getElementById('report-card').style.display='none';
+}
+
+// ─── DRILL-DOWN REGISTRY ─────────────────────
+// Registry avoids all JSON/quote-escaping issues in onclick attrs.
+// Cells call drill(id) or drillE(id) — no strings passed inline.
+var drillRows=[];
+var _DR=[];  // registry: [{title, rows}] or [{title, fk, fv, mode}]
+var DRILL_COLS=['Ticket No','Created Date','Created Time','Assigned To','Sub Status',
+  'Disposition Folder Level 3','Disposition Folder Level 4','Reopen Count',
+  'Last Reopen Date','Last Reopen Time','Diff Time Created And Resolve',
+  'Current Queue Name','Phone','Customer Registered Mobile Number'];
+
+function _reg(obj){var id=_DR.length;_DR.push(obj);return id;}
+// Register a direct row array
+function rd(title,rows){return _reg({title:title,rows:rows});}
+// Register an enriched filter
+function re(title,fk,fv,mode){return _reg({title:title,fk:fk,fv:fv,mode:mode,en:true});}
+
+// Call from onclick
+function drill(id){
+  var e=_DR[id]; if(!e) return;
+  if(e.en){
+    if(!rrData) return;
+    var rows=rrData.enriched.filter(function(r){
+      if(e.mode==='reopen'&&!r.isReopen) return false;
+      if(e.mode==='after48'&&!r.isAfter48) return false;
+      if(e.fk&&e.fv) for(var i=0;i<e.fk.length;i++){
+        if(e.fk[i]==='dk'&&r.dk!==e.fv[i]) return false;
+        if(e.fk[i]==='disp'&&r.disp3!==e.fv[i]) return false;
+      }
+      return true;
+    }).map(function(r){return r._raw;}).filter(Boolean);
+    openDrill(e.title,rows);
+  } else {
+    openDrill(e.title,e.rows||[]);
+  }
+}
+
+function openDrill(title,rows){
+  drillRows=rows||[];
+  document.getElementById('drill-title').textContent=title+' — '+drillRows.length+' tickets';
+  document.getElementById('drill-count').textContent=drillRows.length+' ticket'+(drillRows.length!==1?'s':'');
+  var available=drillRows.length?Object.keys(drillRows[0]):[];
+  var cols=DRILL_COLS.filter(function(c){return available.indexOf(c)>=0;});
+  if(!cols.length) cols=available.slice(0,14);
+  var h='<table><thead><tr>'+cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+  drillRows.forEach(function(row){
+    h+='<tr>'+cols.map(function(c){
+      var v=String(row[c]||'').trim();
+      return '<td>'+(v.length>55?v.slice(0,53)+'…':v)+'</td>';
+    }).join('')+'</tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('drill-body').innerHTML=h;
+  document.getElementById('drill-modal').classList.add('open');
+}
+function closeDrill(e){if(e.target===document.getElementById('drill-modal'))closeDrillBtn();}
+function closeDrillBtn(){document.getElementById('drill-modal').classList.remove('open');}
+function exportDrill(){
+  if(!drillRows.length) return;
+  var available=Object.keys(drillRows[0]);
+  var cols=DRILL_COLS.filter(function(c){return available.indexOf(c)>=0;});
+  if(!cols.length) cols=available.slice(0,14);
+  var csv=cols.join(',')+'\n';
+  drillRows.forEach(function(row){
+    csv+=cols.map(function(c){var v=String(row[c]||'');return '"'+v.replace(/"/g,'""')+'"';}).join(',')+'\n';
+  });
+  var a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='drill_tickets.csv';a.click();
+}
+</script>
+<!-- Drill-down modal -->
+<div class="modal-bg" id="drill-modal" onclick="closeDrill(event)">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2 id="drill-title">Tickets</h2>
+      <button class="modal-close" onclick="closeDrillBtn()">✕</button>
+    </div>
+    <div class="modal-body" id="drill-body"></div>
+    <div class="modal-footer">
+      <span id="drill-count"></span>
+      <button class="btn btn-p" onclick="exportDrill()">⬇ Export CSV</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
