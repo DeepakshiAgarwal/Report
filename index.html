@@ -83,6 +83,11 @@ tr:hover td.mn{background:#ededf8;}
 
 /* Reopen % highlight in CX table */
 .reop-highlight{background:#fff3e0!important;color:#7a4200;font-weight:700;}
+
+/* MTD summary column */
+th.mtd-col{background:#dde6fd!important;color:#1a2f8a;border-right:2px solid #8a9de0!important;}
+td.mtd-col{background:#eef2ff!important;font-weight:700;border-right:2px solid #b8c4ee!important;}
+tr:hover td.mtd-col{background:#e4eaff!important;}
 </style>
 </head>
 <body>
@@ -237,7 +242,7 @@ var V_WAIT     = 'Waiting for Customer';
 var SPIKE      = 5;
 // ─────────────────────────────────────────────
 
-var repData=null, dispData=null, activeTab='cx';
+var repData=null, dispData=null, activeTab='cx', mtdCXRow=null;
 
 // ── File drop / upload ──
 var dz=document.getElementById('dz');
@@ -504,9 +509,7 @@ function generate(raw, fname, cnt, allRaw){
   if(byDate['unknown']) keys.push('unknown');
 
   // CX Performance
-  var res=[];
-  keys.forEach(function(k){
-    var rows=byDate[k].rows, d=byDate[k].d;
+  function computeCXMetrics(rows, lb){
     var tot=rows.length, ocrC=rows.filter(isO).length, base=tot-ocrC;
     var comp=rows.filter(isD);
     var reopRows=rows.filter(function(r){var v=String(r[COL_REOPEN]==null?'':r[COL_REOPEN]).trim();return v!==''&&v!=='0';});
@@ -518,8 +521,8 @@ function generate(raw, fname, cnt, allRaw){
     var r24pRows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w24p';});
     var baseRows=rows.filter(function(r){return !isO(r);});
 
-    res.push({
-      lb:fd(d),
+    return {
+      lb:lb,
       tot:tot, ocrC:ocrC, ocrP:ps(ocrC,tot), base:base,
       r4:r4Rows.length,
       r4p:ps(r4Rows.length,base),
@@ -530,7 +533,7 @@ function generate(raw, fname, cnt, allRaw){
       // ── REOPEN: divided by TOTAL tickets (tot), not base ──
       reop:ps(reopRows.length,tot),
       wait:ps(waitRows.length,base),
-      _rows:rows, _dk:fd(d),
+      _rows:rows, _dk:lb,
       _byFilter:{
         tot:rows, ocrC:rows.filter(isO), ocrP:rows.filter(isO),
         base:baseRows,
@@ -542,9 +545,30 @@ function generate(raw, fname, cnt, allRaw){
         reop:reopRows,
         wait:waitRows
       }
-    });
+    };
+  }
+
+  var res=[];
+  keys.forEach(function(k){
+    var rows=byDate[k].rows, d=byDate[k].d;
+    res.push(computeCXMetrics(rows, fd(d)));
   });
   repData=res;
+
+  // MTD — aggregates all dated rows in the same calendar month as the latest date in the file
+  mtdCXRow=null;
+  var datedKeys=keys.filter(function(k){return k!=='unknown'&&byDate[k].d;});
+  if(datedKeys.length){
+    var lastD=byDate[datedKeys[datedKeys.length-1]].d;
+    var monthKeys=datedKeys.filter(function(k){
+      var dd=byDate[k].d;
+      return dd.getFullYear()===lastD.getFullYear()&&dd.getMonth()===lastD.getMonth();
+    });
+    var mtdRows=[];
+    monthKeys.forEach(function(k){mtdRows=mtdRows.concat(byDate[k].rows);});
+    var monthLbl=lastD.toLocaleString('en-US',{month:'short'})+' MTD';
+    mtdCXRow=computeCXMetrics(mtdRows, monthLbl);
+  }
 
   // Disposition
   var pairOrd=[],pSeen={},l3Ord=[],l3G={};
@@ -642,20 +666,22 @@ var MX=[
 ];
 function renderCX(res){
   _DR=[];
-  var cols=res.map(function(r){return r.lb;});
+  var allRows=mtdCXRow?[mtdCXRow].concat(res):res;
+  var cols=allRows.map(function(r){return r.lb;});
 
   // ── Main CX metrics table ──
   var h='<table><thead><tr><th class="mh">Metric</th>';
-  cols.forEach(function(c){h+='<th>'+c+'</th>';});
+  cols.forEach(function(c,i){h+='<th'+(mtdCXRow&&i===0?' class="mtd-col"':'')+'>'+c+'</th>';});
   h+='</tr></thead><tbody>';
   MX.forEach(function(m){
     if(m.s){h+='<tr class="sec-row"><td class="mn" colspan="'+(cols.length+1)+'">'+m.lb+'</td></tr>';return;}
     h+='<tr><td class="mn'+(m.isReop?' reop-highlight':'')+'">'+m.lb+'</td>';
-    res.forEach(function(ri){
+    allRows.forEach(function(ri,i){
       var val=ri[m.k]!=null?ri[m.k]:'—';
       var rows=ri._byFilter&&ri._byFilter[m.k]!==undefined?ri._byFilter[m.k]:ri._rows;
       var id=rd(m.lb+' · '+ri.lb, rows);
-      h+='<td class="clickable'+(m.isReop?' reop-highlight':'')+'" onclick="drill('+id+')">'+val+'</td>';
+      var isMtd=mtdCXRow&&i===0;
+      h+='<td class="clickable'+(m.isReop?' reop-highlight':'')+(isMtd?' mtd-col':'')+'" onclick="drill('+id+')">'+val+'</td>';
     });
     h+='</tr>';
   });
@@ -748,13 +774,14 @@ function renderDisp(data){
 function copyActive(){activeTab==='cx'?copyCX():copyDisp();}
 function copyCX(){
   if(!repData) return;
-  var cols=repData.map(function(r){return r.lb;}),mW=50,cW=14,t='Metric'.padEnd(mW);
+  var allRows=mtdCXRow?[mtdCXRow].concat(repData):repData;
+  var cols=allRows.map(function(r){return r.lb;}),mW=50,cW=14,t='Metric'.padEnd(mW);
   cols.forEach(function(c){t+=c.padEnd(cW);});
   t+='\n'+'-'.repeat(mW+cW*cols.length)+'\n';
   MX.forEach(function(m){
     if(m.s){t+='\n'+m.lb.toUpperCase()+'\n';return;}
     t+=m.lb.padEnd(mW);
-    repData.forEach(function(r){t+=String(r[m.k]!=null?r[m.k]:'—').padEnd(cW);});
+    allRows.forEach(function(r){t+=String(r[m.k]!=null?r[m.k]:'—').padEnd(cW);});
     t+='\n';
   });
   clip(t);
@@ -1077,7 +1104,7 @@ function copyConnect(){
 }
 
 function reset(){
-  repData=null;dispData=null;rrData=null;connectData=null;_DR=[];agentData={total:'',available:''};
+  repData=null;dispData=null;rrData=null;connectData=null;mtdCXRow=null;_DR=[];agentData={total:'',available:''};
   document.getElementById('fi').value='';
   document.getElementById('fi-connect').value='';
   showErr('');showErrConnect('');
