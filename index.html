@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>CX Performance Report</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:system-ui,sans-serif;background:#f4f4f6;color:#1a1a1a;min-height:100vh;}
@@ -102,10 +103,14 @@ tr:hover td.mtd-col{background:#e4eaff!important;}
     <div class="drop-title">Drop the Kapture report file here</div>
     <div class="drop-sub">.xlsx, .xls or .csv — or click to browse</div>
   </div>
+  <div style="display:flex;justify-content:center;margin-top:1rem;">
+    <button class="btn btn-p" id="gmail-btn" onclick="fetchFromGmail()">📧 Fetch Today's Report from Gmail</button>
+  </div>
+  <div class="err" id="err-gmail" style="background:#e8f4fd;color:#1a5fa0;"></div>
   <div class="how">
     <span style="font-size:1.4rem;flex-shrink:0">💡</span>
     <div><b>How to get the file daily:</b><br>
-    Tag me in Claude chat with <b>"fetch report"</b> → I'll search your Gmail, post the download link → click it → drop file here → report appears instantly.</div>
+    Click <b>"Fetch Today's Report from Gmail"</b> above (one-time Google sign-in) → the report loads automatically. If your browser blocks the direct download, it'll open the report link in a new tab instead — download it, then drop the file below.</div>
   </div>
   <div class="err" id="err"></div>
 </div>
@@ -242,6 +247,22 @@ var V_WAIT     = 'Waiting for Customer';
 var SPIKE      = 5;
 // ─────────────────────────────────────────────
 
+// ─── Gmail integration config ───
+// Setup (one-time, ~5 min):
+// 1. Go to https://console.cloud.google.com/ and create (or pick) a project.
+// 2. APIs & Services → Library → enable "Gmail API".
+// 3. APIs & Services → OAuth consent screen → User type "External" → fill app name/email →
+//    Publishing status "Testing" → add your Google account under "Test users".
+// 4. APIs & Services → Credentials → Create Credentials → OAuth client ID → Application type
+//    "Web application" → Authorized JavaScript origins: https://deepakshiagarwal.github.io
+// 5. Copy the generated Client ID and paste it below.
+// You'll see a "Google hasn't verified this app" screen the first time — that's expected
+// for a personal-use project; click Continue since it's your own app.
+var GMAIL_CLIENT_ID = 'YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com';
+var GMAIL_SCOPE     = 'https://www.googleapis.com/auth/gmail.readonly';
+var GMAIL_QUERY     = 'from:no-reply-report@kapturecrm.com subject:"Kapture All Ticket Report" newer_than:3d';
+// ─────────────────────────────────────────────
+
 var repData=null, dispData=null, activeTab='cx', mtdCXRow=null;
 
 // ── File drop / upload ──
@@ -252,6 +273,113 @@ dz.addEventListener('dragleave',function(){dz.classList.remove('over');});
 dz.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('over');load(e.dataTransfer.files[0]);});
 
 function showErr(msg){var el=document.getElementById('err');el.textContent=msg;el.style.display=msg?'block':'none';}
+
+// ─── Gmail fetch ──────────────────────────────
+var gmailTokenClient=null, gmailAccessToken=null;
+
+function showGmailStatus(msg, isErr){
+  var el=document.getElementById('err-gmail');
+  el.textContent=msg;
+  el.style.display=msg?'block':'none';
+  el.style.background=isErr?'#fde8e8':'#e8f4fd';
+  el.style.color=isErr?'#a81a1a':'#1a5fa0';
+}
+
+function fetchFromGmail(){
+  if(GMAIL_CLIENT_ID.indexOf('YOUR_GOOGLE_OAUTH_CLIENT_ID')>=0){
+    showGmailStatus('Gmail integration isn\'t set up yet — a Google OAuth Client ID needs to be added in the page code.', true);
+    return;
+  }
+  if(typeof google==='undefined'||!google.accounts||!google.accounts.oauth2){
+    showGmailStatus('Google Sign-In is still loading — try again in a second.', true);
+    return;
+  }
+  showGmailStatus('Connecting to Gmail…', false);
+  if(!gmailTokenClient){
+    gmailTokenClient=google.accounts.oauth2.initTokenClient({
+      client_id: GMAIL_CLIENT_ID,
+      scope: GMAIL_SCOPE,
+      callback: function(resp){
+        if(resp.error){showGmailStatus('Gmail sign-in failed: '+resp.error, true);return;}
+        gmailAccessToken=resp.access_token;
+        runGmailSearch();
+      }
+    });
+  }
+  gmailTokenClient.requestAccessToken({prompt: gmailAccessToken?'':'consent'});
+}
+
+function runGmailSearch(){
+  showGmailStatus('Searching Gmail for today\'s report…', false);
+  fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q='+encodeURIComponent(GMAIL_QUERY),{
+    headers:{Authorization:'Bearer '+gmailAccessToken}
+  })
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(!data.messages||!data.messages.length){
+      showGmailStatus('No report email found for the last few days. Check that the Kapture report has arrived.', true);
+      return;
+    }
+    return fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+data.messages[0].id+'?format=full',{
+      headers:{Authorization:'Bearer '+gmailAccessToken}
+    }).then(function(r2){return r2.json();});
+  })
+  .then(function(msg){
+    if(!msg) return;
+    var html=findMimePart(msg.payload,'text/html')||findMimePart(msg.payload,'text/plain');
+    if(!html){showGmailStatus('Found the email but could not read its body.', true);return;}
+    var link=findDownloadLink(html);
+    if(!link){showGmailStatus('Found the email but could not find the download link inside it.', true);return;}
+    showGmailStatus('Found today\'s report — downloading…', false);
+    tryFetchReportFile(link);
+  })
+  .catch(function(er){showGmailStatus('Gmail error: '+er.message, true);});
+}
+
+function findMimePart(part, mime){
+  if(!part) return null;
+  if(part.mimeType===mime && part.body && part.body.data) return b64urlDecode(part.body.data);
+  if(part.parts){
+    for(var i=0;i<part.parts.length;i++){
+      var found=findMimePart(part.parts[i], mime);
+      if(found) return found;
+    }
+  }
+  return null;
+}
+
+function b64urlDecode(data){
+  var s=data.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4) s+='=';
+  var bin=atob(s);
+  var bytes=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+function findDownloadLink(html){
+  var doc=new DOMParser().parseFromString(html,'text/html');
+  var links=Array.prototype.slice.call(doc.querySelectorAll('a[href]'));
+  var byText=links.find(function(a){return /download/i.test(a.textContent);});
+  if(byText) return byText.href;
+  return links.length?links[0].href:null;
+}
+
+function tryFetchReportFile(url){
+  fetch(url).then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.blob();
+  }).then(function(blob){
+    var isCsv=blob.type.indexOf('csv')>=0;
+    var name='kapture-report-'+new Date().toISOString().slice(0,10)+(isCsv?'.csv':'.xlsx');
+    var file=new File([blob], name, {type:blob.type});
+    showGmailStatus('Report downloaded — generating…', false);
+    load(file);
+  }).catch(function(){
+    showGmailStatus('Could not auto-download the file (the link needs your browser session). Opening it in a new tab — download it, then drop the file below.', true);
+    window.open(url,'_blank');
+  });
+}
 
 function load(file){
   if(!file) return;
