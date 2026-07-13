@@ -42,7 +42,7 @@ h1{font-size:20px;font-weight:700;margin-bottom:1.25rem;}
 /* Tables */
 .tbl-wrap{overflow-x:auto;margin-top:1rem;}
 table{border-collapse:collapse;font-size:12px;width:100%;min-width:700px;}
-th{background:#f0f0f0;font-weight:700;padding:9px 13px;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:11px;color:#333;}
+th{background:#f0f0f0;font-weight:700;padding:9px 13px;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:11px;color:#333;position:sticky;top:0;z-index:2;}
 th.mh{text-align:left;min-width:240px;background:#e8e8e8;}
 td{padding:7px 13px;border:1px solid #e5e5e5;text-align:center;white-space:nowrap;font-size:12px;}
 td.mn{text-align:left;background:#fafafa;font-weight:500;color:#444;}
@@ -89,6 +89,12 @@ tr:hover td.mn{background:#ededf8;}
 th.mtd-col{background:#dde6fd!important;color:#1a2f8a;border-right:2px solid #8a9de0!important;}
 td.mtd-col{background:#eef2ff!important;font-weight:700;border-right:2px solid #b8c4ee!important;}
 tr:hover td.mtd-col{background:#e4eaff!important;}
+
+/* Full View mode — bounds the report to the viewport so both scrollbars
+   stay reachable on-screen instead of at the bottom of a tall page. */
+body.fs-lock{overflow:hidden;}
+#report-card.fullscreen{position:fixed;inset:0;z-index:900;margin:0;border-radius:0;max-width:none;overflow-y:auto;padding:1.25rem 1.5rem 1.5rem;}
+#report-card.fullscreen .tbl-wrap{max-height:calc(100vh - 230px);overflow-y:auto;}
 </style>
 </head>
 <body>
@@ -121,6 +127,7 @@ tr:hover td.mtd-col{background:#e4eaff!important;}
     <span style="font-size:16px;font-weight:700;">CX Daily Reports</span>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-p" onclick="copyActive()">📋 Copy for Slack</button>
+      <button class="btn" id="fs-btn" onclick="toggleFullscreen()">⛶ Full View</button>
       <button class="btn" onclick="reset()">Load New File</button>
     </div>
   </div>
@@ -639,6 +646,16 @@ function ps(n,den){return pct(n,den)+'%';}
 function isD(r){return nrm(r[COL_STATUS])===V_DONE;}
 function isO(r){return nrm(r[COL_STATUS])===V_OCR;}
 function isW(r){return nrm(r[COL_STATUS])===V_WAIT;}
+function toggleFullscreen(){
+  var card=document.getElementById('report-card');
+  var on=card.classList.toggle('fullscreen');
+  document.body.classList.toggle('fs-lock', on);
+  document.getElementById('fs-btn').textContent = on ? '✕ Exit Full View' : '⛶ Full View';
+}
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape' && document.getElementById('report-card').classList.contains('fullscreen')) toggleFullscreen();
+});
+
 var TAB_ORDER=['cx','disp','rr','connect','tat'];
 function switchTab(t){
   activeTab=t;
