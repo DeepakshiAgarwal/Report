@@ -647,6 +647,12 @@ function fd(d){
   return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2);
 }
 function pct(n,den){return(!den||den===0)?0:Math.round(n/den*100);}
+function percentile(arr,p){
+  if(!arr.length) return null;
+  var sorted=arr.slice().sort(function(a,b){return a-b;});
+  var idx=Math.min(sorted.length-1,Math.max(0,Math.ceil(p/100*sorted.length)-1));
+  return sorted[idx];
+}
 function ps(n,den){return pct(n,den)+'%';}
 function isD(r){return nrm(r[COL_STATUS])===V_DONE;}
 function isO(r){return nrm(r[COL_STATUS])===V_OCR;}
@@ -696,6 +702,8 @@ function generate(raw, fname, cnt, allRaw){
     var r1224Rows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w1224';});
     var r24pRows=comp.filter(function(r){return bucket(toHrs(r[COL_DIFF]))==='w24p';});
     var baseRows=rows.filter(function(r){return !isO(r);});
+    var compHrs=comp.map(function(r){return toHrs(r[COL_DIFF]);}).filter(function(h){return h!=null&&!isNaN(h);});
+    var p95Hrs=percentile(compHrs,95);
 
     return {
       lb:lb,
@@ -705,6 +713,7 @@ function generate(raw, fname, cnt, allRaw){
       r412p:ps(r412Rows.length,base),
       r1224p:ps(r1224Rows.length,base),
       r24pp:ps(r24pRows.length,base),
+      p95:p95Hrs!=null?p95Hrs.toFixed(1)+'h':'—',
       pend:ps(pendRows.length,base),
       // ── REOPEN: divided by TOTAL tickets (tot), not base ──
       reop:ps(reopRows.length,tot),
@@ -717,6 +726,7 @@ function generate(raw, fname, cnt, allRaw){
         r412p:r412Rows,
         r1224p:r1224Rows,
         r24pp:r24pRows,
+        p95:comp,
         pend:pendRows,
         reop:reopRows,
         wait:waitRows
@@ -865,6 +875,7 @@ var MX=[
   {k:'r412p', lb:'Resolved % within 4–12 hrs',             s:0},
   {k:'r1224p',lb:'Resolved % within 12–24 hrs',            s:0},
   {k:'r24pp', lb:'Resolved % > 24 hrs',                    s:0},
+  {k:'p95',   lb:'P95 Resolution Time (Excl. OCR)',        s:0},
   {k:'_s2',   lb:'Other Metrics  (÷ Excl. OCR)',           s:1},
   {k:'pend',  lb:'Pending %',                              s:0},
   {k:'reop',  lb:'Reopen Service Team % (÷ Total Tickets)',s:0, isReop:true},
@@ -928,11 +939,33 @@ function renderCX(res){
 
   h+='</tbody></table></div></div>';
 
+  // ── CSAT (manual entry) ──
+  h+='<div style="margin-top:1.75rem;">';
+  h+='<div style="margin-bottom:.6rem;"><span style="font-size:13px;font-weight:700;color:#333;">😊 CSAT (Manual Entry)</span></div>';
+  h+='<div class="tbl-wrap"><table id="csat-table"><thead><tr>';
+  h+='<th class="mh" style="min-width:240px;">Metric</th>';
+  h+='<th>Value</th>';
+  h+='</tr></thead><tbody>';
+  h+='<tr><td class="mn">CSAT %</td>';
+  var csatVal=(csatData['value']!=null)?csatData['value']:'';
+  h+='<td><input type="number" min="0" max="100" id="csat-val"'
+    +' style="width:72px;border:1px solid #ccc;border-radius:5px;padding:4px 6px;font-size:12px;text-align:center;background:#fffbe6;outline:none;"'
+    +' value="'+csatVal+'"'
+    +' oninput="saveCsat(this.value)"'
+    +' placeholder="—"/></td>';
+  h+='</tr>';
+  h+='</tbody></table></div></div>';
+
   document.getElementById('rt-cx').innerHTML=h;
 }
 
 // Agent data store — simple single values
 var agentData={total:'',available:''};
+var csatData={value:''};
+
+function saveCsat(val){
+  csatData.value=val;
+}
 
 function saveAgentSimple(field,val){
   agentData[field]=val;
@@ -1313,7 +1346,7 @@ function copyConnect(){
 }
 
 function reset(){
-  repData=null;dispData=null;rrData=null;connectData=null;mtdCXRow=null;_DR=[];agentData={total:'',available:''};
+  repData=null;dispData=null;rrData=null;connectData=null;mtdCXRow=null;_DR=[];agentData={total:'',available:''};csatData={value:''};
   document.getElementById('fi').value='';
   document.getElementById('fi-connect').value='';
   showErr('');showErrConnect('');
