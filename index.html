@@ -90,6 +90,11 @@ th.mtd-col{background:#dde6fd!important;color:#1a2f8a;border-right:2px solid #8a
 td.mtd-col{background:#eef2ff!important;font-weight:700;border-right:2px solid #b8c4ee!important;}
 tr:hover td.mtd-col{background:#e4eaff!important;}
 
+/* Completed-week rollup columns (Wk1, Wk2, …) */
+th.wk-col{background:#f0eefc!important;color:#4a3a8a;}
+td.wk-col{background:#f7f5fd!important;font-weight:600;}
+tr:hover td.wk-col{background:#efe9fb!important;}
+
 /* Full View mode — bounds the report to the viewport so both scrollbars
    stay reachable on-screen instead of at the bottom of a tall page. */
 body.fs-lock{overflow:hidden;}
@@ -719,18 +724,14 @@ function generate(raw, fname, cnt, allRaw){
     };
   }
 
-  var res=[];
-  keys.forEach(function(k){
-    var rows=byDate[k].rows, d=byDate[k].d;
-    res.push(computeCXMetrics(rows, fd(d)));
-  });
-  repData=res;
+  var datedKeys=keys.filter(function(k){return k!=='unknown'&&byDate[k].d;});
+  var unknownKeys=keys.filter(function(k){return k==='unknown';});
 
   // MTD — aggregates all dated rows in the same calendar month as the latest date in the file
   mtdCXRow=null;
-  var datedKeys=keys.filter(function(k){return k!=='unknown'&&byDate[k].d;});
+  var lastD=null;
   if(datedKeys.length){
-    var lastD=byDate[datedKeys[datedKeys.length-1]].d;
+    lastD=byDate[datedKeys[datedKeys.length-1]].d;
     var monthKeys=datedKeys.filter(function(k){
       var dd=byDate[k].d;
       return dd.getFullYear()===lastD.getFullYear()&&dd.getMonth()===lastD.getMonth();
@@ -740,6 +741,40 @@ function generate(raw, fname, cnt, allRaw){
     var monthLbl=lastD.toLocaleString('en-US',{month:'short'})+' MTD';
     mtdCXRow=computeCXMetrics(mtdRows, monthLbl);
   }
+
+  // Weekly grouping: completed weeks-of-month collapse into one "WkN" column each;
+  // the week containing the most recent date stays broken out day-by-day.
+  var res=[];
+  if(datedKeys.length){
+    var monthsSeen={};
+    datedKeys.forEach(function(k){var dd=byDate[k].d;monthsSeen[dd.getFullYear()+'-'+dd.getMonth()]=1;});
+    var multiMonth=Object.keys(monthsSeen).length>1;
+
+    var curWeekNum=Math.ceil(lastD.getDate()/7);
+    var curWeekKey=lastD.getFullYear()+'-'+lastD.getMonth()+'-'+curWeekNum;
+    var weekBuckets={}, weekOrder=[];
+    datedKeys.forEach(function(k){
+      var dd=byDate[k].d, wn=Math.ceil(dd.getDate()/7);
+      var wk=dd.getFullYear()+'-'+dd.getMonth()+'-'+wn;
+      if(!weekBuckets[wk]){weekBuckets[wk]={keys:[],wn:wn,d:dd};weekOrder.push(wk);}
+      weekBuckets[wk].keys.push(k);
+    });
+    weekOrder.forEach(function(wk){
+      var b=weekBuckets[wk];
+      if(wk===curWeekKey){
+        b.keys.forEach(function(k){res.push(computeCXMetrics(byDate[k].rows, fd(byDate[k].d)));});
+      } else {
+        var combined=[];
+        b.keys.forEach(function(k){combined=combined.concat(byDate[k].rows);});
+        var lbl=(multiMonth?b.d.toLocaleString('en-US',{month:'short'})+' ':'')+'Wk'+b.wn;
+        var wkRow=computeCXMetrics(combined, lbl);
+        wkRow.isWk=true;
+        res.push(wkRow);
+      }
+    });
+  }
+  unknownKeys.forEach(function(k){res.push(computeCXMetrics(byDate[k].rows, fd(byDate[k].d)));});
+  repData=res;
 
   // Disposition
   var pairOrd=[],pSeen={},l3Ord=[],l3G={};
@@ -842,7 +877,10 @@ function renderCX(res){
 
   // ── Main CX metrics table ──
   var h='<table><thead><tr><th class="mh">Metric</th>';
-  cols.forEach(function(c,i){h+='<th'+(mtdCXRow&&i===0?' class="mtd-col"':'')+'>'+c+'</th>';});
+  cols.forEach(function(c,i){
+    var isMtd=mtdCXRow&&i===0, isWk=allRows[i].isWk;
+    h+='<th'+(isMtd?' class="mtd-col"':isWk?' class="wk-col"':'')+'>'+c+'</th>';
+  });
   h+='</tr></thead><tbody>';
   MX.forEach(function(m){
     if(m.s){h+='<tr class="sec-row"><td class="mn" colspan="'+(cols.length+1)+'">'+m.lb+'</td></tr>';return;}
@@ -851,8 +889,8 @@ function renderCX(res){
       var val=ri[m.k]!=null?ri[m.k]:'—';
       var rows=ri._byFilter&&ri._byFilter[m.k]!==undefined?ri._byFilter[m.k]:ri._rows;
       var id=rd(m.lb+' · '+ri.lb, rows);
-      var isMtd=mtdCXRow&&i===0;
-      h+='<td class="clickable'+(m.isReop?' reop-highlight':'')+(isMtd?' mtd-col':'')+'" onclick="drill('+id+')">'+val+'</td>';
+      var isMtd=mtdCXRow&&i===0, isWk=ri.isWk;
+      h+='<td class="clickable'+(m.isReop?' reop-highlight':'')+(isMtd?' mtd-col':isWk?' wk-col':'')+'" onclick="drill('+id+')">'+val+'</td>';
     });
     h+='</tr>';
   });
