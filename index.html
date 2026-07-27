@@ -287,7 +287,7 @@ dz.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('o
 function showErr(msg){var el=document.getElementById('err');el.textContent=msg;el.style.display=msg?'block':'none';}
 
 // ─── Gmail fetch ──────────────────────────────
-var gmailTokenClient=null, gmailAccessToken=null, gmailReportTab=null;
+var gmailTokenClient=null, gmailAccessToken=null, gmailAttemptId=0;
 
 function showGmailStatus(msg, isErr){
   var el=document.getElementById('err-gmail');
@@ -297,22 +297,20 @@ function showGmailStatus(msg, isErr){
   el.style.color=isErr?'#a81a1a':'#1a5fa0';
 }
 
-// Opens a placeholder tab synchronously (inside the click handler) so the browser
-// doesn't block it later — popups opened after async work (OAuth, fetch) get blocked.
-function openPlaceholderTab(){
-  var w=null;
-  try{
-    w=window.open('', '_blank');
-    if(w&&w.document){
-      w.document.title='Fetching your Kapture report…';
-      w.document.body.innerHTML='<p style="font-family:system-ui,sans-serif;padding:2rem;color:#666;">Fetching your report link… this tab will redirect automatically.</p>';
-    }
-  }catch(e){}
-  return w;
-}
-function closeGmailReportTab(){
-  if(gmailReportTab&&!gmailReportTab.closed){try{gmailReportTab.close();}catch(e){}}
-  gmailReportTab=null;
+// Renders a real, user-clickable link (never blocked by popup blockers, unlike window.open).
+function showGmailLink(url, note){
+  var el=document.getElementById('err-gmail');
+  el.style.background='#e8f4fd';
+  el.style.color='#1a5fa0';
+  el.style.display='block';
+  el.textContent='';
+  el.appendChild(document.createTextNode((note||'Found today\'s report.')+' '));
+  var a=document.createElement('a');
+  a.href=url; a.target='_blank'; a.rel='noopener';
+  a.textContent='📥 Click here to open it';
+  a.style.cssText='font-weight:700;text-decoration:underline;color:#1a5fa0;';
+  el.appendChild(a);
+  el.appendChild(document.createTextNode(' — then drop the downloaded file below.'));
 }
 
 function fetchFromGmail(){
@@ -324,14 +322,19 @@ function fetchFromGmail(){
     showGmailStatus('Google Sign-In is still loading — try again in a second.', true);
     return;
   }
-  showGmailStatus('Connecting to Gmail…', false);
-  gmailReportTab=openPlaceholderTab();
+  var myAttempt=++gmailAttemptId;
+  showGmailStatus('Connecting to Gmail — a Google sign-in popup should appear…', false);
+  setTimeout(function(){
+    if(myAttempt===gmailAttemptId){
+      showGmailStatus('Still waiting on Google sign-in. If no popup appeared, your browser likely blocked it — check the address bar for a blocked-popup icon, allow popups for this site, then click the button again.', true);
+    }
+  }, 15000);
   if(!gmailTokenClient){
     gmailTokenClient=google.accounts.oauth2.initTokenClient({
       client_id: GMAIL_CLIENT_ID,
       scope: GMAIL_SCOPE,
       callback: function(resp){
-        if(resp.error){showGmailStatus('Gmail sign-in failed: '+resp.error, true);closeGmailReportTab();return;}
+        if(resp.error){showGmailStatus('Gmail sign-in failed: '+resp.error, true);return;}
         gmailAccessToken=resp.access_token;
         runGmailSearch();
       }
@@ -349,7 +352,6 @@ function runGmailSearch(){
   .then(function(data){
     if(!data.messages||!data.messages.length){
       showGmailStatus('No report email found for the last few days. Check that the Kapture report has arrived.', true);
-      closeGmailReportTab();
       return;
     }
     return fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+data.messages[0].id+'?format=full',{
@@ -359,13 +361,13 @@ function runGmailSearch(){
   .then(function(msg){
     if(!msg) return;
     var html=findMimePart(msg.payload,'text/html')||findMimePart(msg.payload,'text/plain');
-    if(!html){showGmailStatus('Found the email but could not read its body.', true);closeGmailReportTab();return;}
+    if(!html){showGmailStatus('Found the email but could not read its body.', true);return;}
     var link=findDownloadLink(html);
-    if(!link){showGmailStatus('Found the email but could not find the download link inside it.', true);closeGmailReportTab();return;}
+    if(!link){showGmailStatus('Found the email but could not find the download link inside it.', true);return;}
     showGmailStatus('Found today\'s report — downloading…', false);
     tryFetchReportFile(link);
   })
-  .catch(function(er){showGmailStatus('Gmail error: '+er.message, true);closeGmailReportTab();});
+  .catch(function(er){showGmailStatus('Gmail error: '+er.message, true);});
 }
 
 function findMimePart(part, mime){
@@ -402,20 +404,13 @@ function tryFetchReportFile(url){
     if(!r.ok) throw new Error('HTTP '+r.status);
     return r.blob();
   }).then(function(blob){
-    closeGmailReportTab();
     var isCsv=blob.type.indexOf('csv')>=0;
     var name='kapture-report-'+new Date().toISOString().slice(0,10)+(isCsv?'.csv':'.xlsx');
     var file=new File([blob], name, {type:blob.type});
     showGmailStatus('Report downloaded — generating…', false);
     load(file);
   }).catch(function(){
-    showGmailStatus('Could not auto-download the file (the link needs your browser session). Opened it in a new tab — download it there, then drop the file below.', true);
-    if(gmailReportTab&&!gmailReportTab.closed){
-      gmailReportTab.location.href=url;
-    } else {
-      window.open(url,'_blank');
-    }
-    gmailReportTab=null;
+    showGmailLink(url, 'Found today\'s report, but your browser can\'t auto-download it (the link needs your normal browser session).');
   });
 }
 
