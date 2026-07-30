@@ -138,6 +138,7 @@ body.fs-lock{overflow:hidden;}
     <div style="display:flex;gap:8px;">
       <button class="btn btn-p" onclick="copyActive()">📋 Copy for Slack</button>
       <button class="btn" id="fs-btn" onclick="toggleFullscreen()">⛶ Full View</button>
+      <button class="btn" onclick="publishCurrentReport()">🌐 Publish for Everyone</button>
       <button class="btn" onclick="reset()">Load New File</button>
     </div>
   </div>
@@ -324,14 +325,26 @@ function buildShareRows(rows){
   });
 }
 
-// Publishes the just-uploaded rows so every visitor sees them — silently does nothing
-// if the signed-in Google account isn't the owner (enforced by Firestore security rules).
+// Last generated report's rows, so the "Publish for Everyone" button can use them.
+var lastFilteredRows=null, lastFilename=null;
+
+function publishCurrentReport(){
+  if(!lastFilteredRows){ showPublishStatus('⚠️ No report loaded yet.'); return; }
+  publishSharedReport(lastFilteredRows, lastFilename);
+}
+
+// Publishes the current report so every visitor sees it. Requires signing in as the
+// owner account (enforced by Firestore security rules) — clicked intentionally via the
+// "Publish for Everyone" button, so failures are shown rather than swallowed silently.
 function publishSharedReport(rows, filename){
-  if(!fbAuth||!fbDb) return;
+  if(!fbAuth||!fbDb){ showPublishStatus('⚠️ Sharing isn\'t available right now.'); return; }
   if(fbAuth.currentUser){ doPublish(rows, filename); return; }
+  showPublishStatus('Signing in with Google…');
   fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
     .then(function(){ doPublish(rows, filename); })
-    .catch(function(){ /* popup blocked/cancelled/not owner — local view still works fine */ });
+    .catch(function(er){
+      showPublishStatus('⚠️ Google sign-in didn\'t complete ('+(er.code||er.message)+'). If no popup appeared, check for a blocked-popup icon in your address bar.');
+    });
 }
 
 // A full month of tickets can approach/exceed Firestore's 1MB single-document limit,
@@ -340,7 +353,11 @@ function publishSharedReport(rows, filename){
 var SHARE_CHUNK_SIZE = 1500;
 
 function doPublish(rows, filename){
-  if(!fbAuth.currentUser||fbAuth.currentUser.email!==OWNER_EMAIL) return;
+  if(!fbAuth.currentUser){ showPublishStatus('⚠️ Not signed in.'); return; }
+  if(fbAuth.currentUser.email!==OWNER_EMAIL){
+    showPublishStatus('⚠️ Only '+OWNER_EMAIL+' can publish reports for everyone (signed in as '+fbAuth.currentUser.email+').');
+    return;
+  }
   var shareRows=buildShareRows(rows);
   var chunks=[];
   for(var i=0;i<shareRows.length;i+=SHARE_CHUNK_SIZE){
@@ -600,7 +617,6 @@ function load(file){
               detectDateFormat(filtered);
               generate(filtered,file.name,filtered.length,allRaw);
               hideLoading();
-              publishSharedReport(filtered, file.name);
             }
             catch(er){showErr('Report error: '+er.message);hideLoading();}
           },50);
@@ -804,6 +820,7 @@ function switchTab(t){
 
 // ── Generate ──
 function generate(raw, fname, cnt, allRaw){
+  lastFilteredRows=raw; lastFilename=fname;
   var byDate={};
   raw.forEach(function(row){
     var d=parseDate(row[COL_DATE]);
