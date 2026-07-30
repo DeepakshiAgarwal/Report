@@ -9,7 +9,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:system-ui,sans-serif;background:#f4f4f6;color:#1a1a1a;min-height:100vh;}
@@ -282,11 +281,12 @@ var GMAIL_SCOPE     = 'https://www.googleapis.com/auth/gmail.readonly';
 var GMAIL_QUERY     = 'from:no-reply-report@kapturecrm.com subject:"Kapture All Ticket Report" newer_than:3d';
 // ─────────────────────────────────────────────
 
-// ─── Shared report (Firebase) config ───
+// ─── Shared report (Firebase Firestore, free Spark plan — no Storage) ───
 // Lets any visitor see the last report the owner uploaded, without uploading anything
-// themselves. Firestore/Storage security rules restrict writes to OWNER_EMAIL only —
-// these config values are meant to be public (Firebase's own docs say so); the actual
-// security is enforced server-side by the rules, not by hiding this object.
+// themselves. Only the trimmed columns the app actually uses are stored (not the raw
+// file) to stay well under Firestore's free per-document size limit. Firestore security
+// rules restrict writes to OWNER_EMAIL only — these config values are meant to be public
+// (Firebase's own docs say so); the actual security is enforced server-side by the rules.
 var FIREBASE_CONFIG = {
   apiKey: "AIzaSyCTnhQrl6p00src1CdA3561p4q9i_Ykmj4",
   authDomain: "l2-cx-report.firebaseapp.com",
@@ -296,12 +296,15 @@ var FIREBASE_CONFIG = {
   appId: "1:432308158061:web:43a6a2d477045870c94964"
 };
 var OWNER_EMAIL = 'deepakshi.agarwal@wiom.in';
-var fbApp=null, fbAuth=null, fbDb=null, fbStorage=null;
+var SHARE_CANON_COLS = ['Ticket No','Created Date','Created Time','Assigned To','Sub Status',
+  'Disposition Folder Level 3','Disposition Folder Level 4','Reopen Count',
+  'First Resolved Time','Resolved Date','Resolved Time','Last Reopen Date','Last Reopen Time',
+  'Diff Time Created And Resolve','Current Queue Name','Phone','Customer Registered Mobile Number'];
+var fbApp=null, fbAuth=null, fbDb=null;
 try{
   fbApp=firebase.initializeApp(FIREBASE_CONFIG);
   fbAuth=firebase.auth();
   fbDb=firebase.firestore();
-  fbStorage=firebase.storage();
 }catch(e){}
 
 function showPublishStatus(msg){
@@ -311,50 +314,86 @@ function showPublishStatus(msg){
   el.style.display=msg?'block':'none';
 }
 
-// Publishes the just-uploaded file so every visitor sees it — silently does nothing
-// if the signed-in Google account isn't the owner (enforced by security rules).
-function publishSharedReport(file){
-  if(!fbAuth||!fbDb||!fbStorage) return;
-  if(fbAuth.currentUser){ doPublish(file); return; }
+function buildShareRows(rows){
+  var srcKeys=[COL_TICKET,COL_DATE,COL_TIME,COL_AGENT_COL,COL_STATUS,
+    COL_DISP3,COL_DISP4,COL_REOPEN,
+    COL_FIRST_RESOLVED,COL_RESOLVED_DATE,COL_RESOLVED_TIME,COL_REOPEN_DATE,COL_REOPEN_TIME,
+    COL_DIFF,COL_QUEUE,'Phone','Customer Registered Mobile Number'];
+  return rows.map(function(r){
+    return srcKeys.map(function(k){var v=r[k];return v===undefined||v===null?'':v;});
+  });
+}
+
+// Publishes the just-uploaded rows so every visitor sees them — silently does nothing
+// if the signed-in Google account isn't the owner (enforced by Firestore security rules).
+function publishSharedReport(rows, filename){
+  if(!fbAuth||!fbDb) return;
+  if(fbAuth.currentUser){ doPublish(rows, filename); return; }
   fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
-    .then(function(){ doPublish(file); })
+    .then(function(){ doPublish(rows, filename); })
     .catch(function(){ /* popup blocked/cancelled/not owner — local view still works fine */ });
 }
 
-function doPublish(file){
+// A full month of tickets can approach/exceed Firestore's 1MB single-document limit,
+// so rows are split across several small chunk docs instead of one big one — this keeps
+// working regardless of report size while staying entirely on the free plan.
+var SHARE_CHUNK_SIZE = 1500;
+
+function doPublish(rows, filename){
   if(!fbAuth.currentUser||fbAuth.currentUser.email!==OWNER_EMAIL) return;
-  showPublishStatus('Publishing for everyone…');
-  var ext=file.name.split('.').pop().toLowerCase();
-  var path='reports/latest.'+ext;
-  fbStorage.ref(path).put(file)
-    .then(function(){
-      return fbDb.collection('meta').doc('latest').set({
-        path:path, ext:ext, filename:file.name,
-        uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        uploadedBy: fbAuth.currentUser.email
-      });
-    })
+  var shareRows=buildShareRows(rows);
+  var chunks=[];
+  for(var i=0;i<shareRows.length;i+=SHARE_CHUNK_SIZE){
+    chunks.push(shareRows.slice(i,i+SHARE_CHUNK_SIZE));
+  }
+  if(chunks.some(function(c){return JSON.stringify(c).length>900000;})){
+    showPublishStatus('⚠️ Report too large to publish for everyone even in chunks — try uploading a shorter date range.');
+    return;
+  }
+  showPublishStatus('Publishing for everyone… ('+chunks.length+' part'+(chunks.length!==1?'s':'')+')');
+  var batch=fbDb.batch();
+  chunks.forEach(function(c,i){
+    batch.set(fbDb.collection('meta').doc('latest_chunk_'+i), {rows:c});
+  });
+  batch.set(fbDb.collection('meta').doc('latest'), {
+    cols: SHARE_CANON_COLS,
+    chunkCount: chunks.length,
+    filename: filename,
+    uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    uploadedBy: fbAuth.currentUser.email
+  });
+  batch.commit()
     .then(function(){ showPublishStatus('✅ Published — everyone visiting this page now sees this report.'); })
-    .catch(function(){ showPublishStatus(''); });
+    .catch(function(er){ showPublishStatus('⚠️ Could not publish: '+(er.message||er.code||'unknown error')); });
 }
 
 // On page load, show whatever the owner last published — no upload needed by the visitor.
 function tryLoadSharedReport(){
   if(!fbDb) return;
   fbDb.collection('meta').doc('latest').get().then(function(doc){
-    if(!doc.exists) return;
+    if(!doc.exists||!doc.data().cols) return;
     var data=doc.data();
-    return fbStorage.ref(data.path).getDownloadURL()
-      .then(function(url){return fetch(url);})
-      .then(function(r){return r.blob();})
-      .then(function(blob){
-        var file=new File([blob], data.filename||('shared.'+data.ext), {type:blob.type});
-        var when=data.uploadedAt&&data.uploadedAt.toDate?data.uploadedAt.toDate().toLocaleString():'';
-        var banner=document.getElementById('shared-banner');
-        banner.textContent='📡 Showing the report last published'+(when?' on '+when:'')+'. Upload your own file below to view something else (only affects your view unless you\'re signed in as the owner).';
-        banner.style.display='block';
-        load(file, true);
+    var chunkGets=[];
+    for(var i=0;i<(data.chunkCount||0);i++){
+      chunkGets.push(fbDb.collection('meta').doc('latest_chunk_'+i).get());
+    }
+    return Promise.all(chunkGets).then(function(chunkDocs){
+      var allRows=[];
+      chunkDocs.forEach(function(cd){ if(cd.exists&&cd.data().rows) allRows=allRows.concat(cd.data().rows); });
+      var rows=allRows.map(function(arr){
+        var o={};
+        data.cols.forEach(function(c,i){o[c]=arr[i];});
+        return o;
       });
+      COL_DISP3='Disposition Folder Level 3';
+      COL_DISP4='Disposition Folder Level 4';
+      detectDateFormat(rows);
+      generate(rows, data.filename||'shared-report', rows.length, rows);
+      var when=data.uploadedAt&&data.uploadedAt.toDate?data.uploadedAt.toDate().toLocaleString():'';
+      var banner=document.getElementById('shared-banner');
+      banner.textContent='📡 Showing the report last published'+(when?' on '+when:'')+'. Upload your own file below to view something else (only affects your view unless you\'re signed in as the owner).';
+      banner.style.display='block';
+    });
   }).catch(function(){ /* no shared report yet, or offline — normal upload screen shows */ });
 }
 tryLoadSharedReport();
@@ -499,7 +538,7 @@ function tryFetchReportFile(url){
   });
 }
 
-function load(file, skipPublish){
+function load(file){
   if(!file) return;
   showErr('');
   showLoading('Reading file… (large files may take a few seconds)');
@@ -561,7 +600,7 @@ function load(file, skipPublish){
               detectDateFormat(filtered);
               generate(filtered,file.name,filtered.length,allRaw);
               hideLoading();
-              if(!skipPublish) publishSharedReport(file);
+              publishSharedReport(filtered, file.name);
             }
             catch(er){showErr('Report error: '+er.message);hideLoading();}
           },50);
